@@ -19,6 +19,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
+import java.util.Locale;
+
 /**
  * Графический интерфейс апгрейдера (рулетки).
  * Размер 280x220, содержит слот ставки, слот цели, колесо рулетки, кнопки управления.
