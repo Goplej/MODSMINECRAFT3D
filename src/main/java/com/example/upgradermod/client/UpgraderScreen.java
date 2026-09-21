@@ -196,7 +196,6 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         this.resultChance = Mth.clamp(chance, 0.0D, 100.0D);
         if (!rejected) {
             this.arrowAngle = normalizeAngle(rollAngle);
-            this.displayedChance = this.resultChance;
         }
         this.resultDisplayUntil = System.currentTimeMillis() + RESULT_DISPLAY_MS;
         updateButtonStates();
@@ -315,9 +314,13 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
      * Компасоподобный индикатор рулетки: концентрические кольца, деления
      * и вращающаяся стрелка. Без букв и обозначений сторон света.
      */
+    private double visibleChance() {
+        return this.hasResult ? this.resultChance : this.displayedChance;
+    }
+
     private int chanceSectorColor() {
-        return this.displayedChance < 30.0 ? 0xFF9B354A
-                : this.displayedChance < 60.0 ? 0xFFAD882D : 0xFF287B52;
+        return visibleChance() < 30.0 ? 0xFF9B354A
+                : visibleChance() < 60.0 ? 0xFFAD882D : 0xFF287B52;
     }
 
     private void drawCompass(GuiGraphics guiGraphics, int centerX, int centerY) {
@@ -326,7 +329,7 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
                 if (dx * dx + dy * dy <= 38 * 38) {
                     guiGraphics.fill(centerX + dx, centerY + dy,
                             centerX + dx + 1, centerY + dy + 1,
-                            (Math.toDegrees(Math.atan2(dx, -dy)) + 360.0) % 360.0 < this.displayedChance * 3.6
+                            (Math.toDegrees(Math.atan2(dx, -dy)) + 360.0) % 360.0 < visibleChance() * 3.6
                                     ? chanceSectorColor() : INNER_COMPASS_COLOR);
                 }
             }
@@ -426,7 +429,7 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         // Percentage stays inside the ring; result text is below it.
         guiGraphics.fill(107, 80, 149, 91, INNER_COMPASS_COLOR);
         guiGraphics.drawCenteredString(this.font,
-                ChanceCalculator.formatChance(this.displayedChance), 128, 81, TEXT_COLOR);
+                ChanceCalculator.formatChance(visibleChance()), 128, 81, TEXT_COLOR);
 
         // Шанс и его подпись.
         String chanceText;

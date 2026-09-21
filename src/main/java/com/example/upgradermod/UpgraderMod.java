@@ -64,11 +64,6 @@ public class UpgraderMod {
         LOGGER.info("Upgrader Mod успешно загружен и ожидает commonSetup.");
     }
 
-    /**
-     * Общая настройка мода. Выполняется на клиенте и сервере.
-     *
-     * @param event событие общего этапа инициализации
-     */
     private void serverTick(net.minecraftforge.event.TickEvent.ServerTickEvent event) {
         if (event.phase == net.minecraftforge.event.TickEvent.Phase.END) {
             com.example.upgradermod.menu.UpgraderMenu.tickPending(event.getServer());
@@ -85,6 +80,11 @@ public class UpgraderMod {
         }
     }
 
+    /**
+     * Общая настройка мода. Выполняется на клиенте и сервере.
+     *
+     * @param event событие общего этапа инициализации
+     */
     private void commonSetup(final FMLCommonSetupEvent event) {
         event.enqueueWork(() -> {
             // Регистрация пакетов

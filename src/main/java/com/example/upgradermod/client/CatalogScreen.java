@@ -294,7 +294,6 @@ public class CatalogScreen extends Screen {
                         // Цель отправляется на сервер; сервер проверяет blacklist
                         // и подтверждает состояние через SyncStatePacket.
                         NetworkHandler.sendToServer(new SetTargetPacket(chosen));
-                        this.parent.getMenu().setTargetStack(chosen);
                         if (this.minecraft != null) {
                             this.minecraft.setScreen(this.parent);
                         }
