@@ -8,6 +8,8 @@ import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * Конфигурация мода Upgrader Mod.
@@ -19,6 +21,29 @@ public class ModConfig {
 
     public static final Common COMMON;
     public static final ForgeConfigSpec SPEC;
+
+    /**
+     * Постоянный чёрный список, который нельзя отключить через конфигурацию.
+     * Сюда входят bedrock, barrier, сам апгрейдер и все служебные/читерские предметы.
+     * Они не появляются в каталоге, не принимаются в input slot и отклоняются
+     * сервером как ставка или цель даже при изменённом клиенте.
+     */
+    private static final Set<String> PERMANENT_BLACKLIST = Set.of(
+            "minecraft:air",
+            "minecraft:bedrock",
+            "minecraft:barrier",
+            "minecraft:light",
+            "minecraft:structure_void",
+            "minecraft:structure_block",
+            "minecraft:jigsaw",
+            "minecraft:command_block",
+            "minecraft:chain_command_block",
+            "minecraft:repeating_command_block",
+            "minecraft:command_block_minecart",
+            "minecraft:debug_stick",
+            "minecraft:knowledge_book",
+            "upgradermod:upgrader"
+    );
 
     static {
         Pair<Common, ForgeConfigSpec> specPair = new ForgeConfigSpec.Builder().configure(Common::new);
@@ -101,6 +126,7 @@ public class ModConfig {
                             "Предметы, запрещённые в ставке, цели и каталоге (полные registry ID через запятую)")
                     .defineListAllowEmpty(List.of("blacklistItems"),
                             Arrays.asList(
+                                    "minecraft:bedrock",
                                     "minecraft:barrier",
                                     "minecraft:command_block",
                                     "minecraft:chain_command_block",
@@ -248,7 +274,13 @@ public class ModConfig {
             return false;
         }
 
-        String idString = id.toString();
+        String idString = id.toString().toLowerCase(Locale.ROOT);
+
+        // Постоянный blacklist проверяется первым и не зависит от конфигурации.
+        if (PERMANENT_BLACKLIST.contains(idString)) {
+            return true;
+        }
+
         return COMMON.blacklistItems.get().stream()
                 .filter(value -> value != null)
                 .map(value -> value.trim())
