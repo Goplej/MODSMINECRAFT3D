@@ -42,13 +42,31 @@ jobs:
           set -o pipefail
           ./gradlew clean build --no-daemon 2>&1 | tee build.log
 
-      - name: Verify JAR contains compiled classes
+      - name: Verify Java 17 mod artifact
         shell: bash
         run: |
-          jar=$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | head -n 1)
-          test -n "$jar"
-          test "$(unzip -l "$jar" | awk '/\.class$/ { count++ } END { print count + 0 }')" -gt 20
-          echo "Built: $jar"
+          python3 - <<'PYCODE'
+          import pathlib, struct, zipfile
+          version = next(line.split('=', 1)[1] for line in pathlib.Path('gradle.properties').read_text().splitlines() if line.startswith('mod_version='))
+          jar = pathlib.Path('build/libs') / f'upgradermod-{version}.jar'
+          with zipfile.ZipFile(jar) as z:
+              classes = [n for n in z.namelist() if n.endswith('.class')]
+              assert len(classes) >= 40, f'Only {len(classes)} classes'
+              for name in classes:
+                  data = z.read(name)
+                  assert len(data) > 8 and data[:4] == bytes.fromhex('cafebabe'), name
+                  assert struct.unpack('>H', data[6:8])[0] == 61, name
+              for name in ('SyncStatePacket', 'SetTargetCountPacket', 'ChancePresetPacket'):
+                  assert f'com/example/upgradermod/network/{name}.class' in classes
+              toml = z.read('META-INF/mods.toml').decode()
+              assert 'upgradermod' in toml and 'Popipok' in toml and version in toml
+              z.read('assets/upgradermod/textures/item/upgrader.png')
+              z.read('assets/upgradermod/lang/ru_ru.json')
+          print(f'Verified {jar}: {len(classes)} Java 17 classes')
+          import os
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'JAR_PATH={jar}\n')
+          PYCODE
 
       - name: Publish build diagnostics to PR
         if: failure() && github.event_name == 'pull_request'
@@ -75,33 +93,6 @@ jobs:
           name: upgradermod-build-log
           path: build.log
           if-no-files-found: warn
-
-      - name: Publish verified JAR to branch
-        if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/arena/')
-        shell: bash
-        run: |
-          before_sha="${{ github.event.before }}"
-          if test "$before_sha" = "0000000000000000000000000000000000000000"; then
-            before_sha=$(git rev-list --max-parents=0 HEAD)
-          fi
-          changed_files=$(git diff --name-only "$before_sha" "$GITHUB_SHA")
-          if ! printf '%s\n' "$changed_files" | grep -Eq '^(src/|build.gradle$|gradle.properties$|settings.gradle$|gradle/)'; then
-            echo "This commit does not change sources or build inputs; keeping the verified JAR."
-            exit 0
-          fi
-
-          jar=$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | head -n 1)
-          test -n "$jar"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f build/libs/*.jar
-          git add -u build/libs
-          if git diff --cached --quiet; then
-            echo "The compiled JAR did not change."
-            exit 0
-          fi
-          git commit -m "ci: publish verified Forge JAR"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
 
       - name: Upload mod JAR
         if: success()

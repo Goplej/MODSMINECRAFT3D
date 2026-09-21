@@ -17,6 +17,8 @@ import java.util.function.Supplier;
  */
 public class SpinResultPacket {
 
+    private final int containerId;
+    private final boolean rejected;
     private final boolean success;
     private final double chance;
     private final float rollAngle;
@@ -28,7 +30,9 @@ public class SpinResultPacket {
      * @param chance    рассчитанный шанс в процентах
      * @param rollAngle угол остановки стрелки рулетки (в градусах)
      */
-    public SpinResultPacket(boolean success, double chance, float rollAngle) {
+    public SpinResultPacket(int containerId, boolean rejected, boolean success, double chance, float rollAngle) {
+        this.containerId = containerId;
+        this.rejected = rejected;
         this.success = success;
         this.chance = chance;
         this.rollAngle = rollAngle;
@@ -62,6 +66,8 @@ public class SpinResultPacket {
      * @param buf сетевой буфер
      */
     public static void encode(SpinResultPacket msg, FriendlyByteBuf buf) {
+        buf.writeVarInt(msg.containerId);
+        buf.writeBoolean(msg.rejected);
         buf.writeBoolean(msg.success);
         buf.writeDouble(msg.chance);
         buf.writeFloat(msg.rollAngle);
@@ -74,7 +80,7 @@ public class SpinResultPacket {
      * @return декодированный пакет
      */
     public static SpinResultPacket decode(FriendlyByteBuf buf) {
-        return new SpinResultPacket(buf.readBoolean(), buf.readDouble(), buf.readFloat());
+        return new SpinResultPacket(buf.readVarInt(), buf.readBoolean(), buf.readBoolean(), buf.readDouble(), buf.readFloat());
     }
 
     /**
@@ -87,8 +93,9 @@ public class SpinResultPacket {
         NetworkEvent.Context ctx = ctxSupp.get();
         ctx.enqueueWork(() -> {
             DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
-                if (Minecraft.getInstance().screen instanceof UpgraderScreen upgraderScreen) {
-                    upgraderScreen.onSpinResult(msg.success, msg.chance, msg.rollAngle);
+                if (Minecraft.getInstance().screen instanceof UpgraderScreen upgraderScreen
+                        && upgraderScreen.getMenu().containerId == msg.containerId) {
+                    upgraderScreen.onSpinResult(msg.rejected, msg.success, msg.chance, msg.rollAngle);
                 }
             });
         });
