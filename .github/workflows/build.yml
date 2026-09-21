@@ -30,7 +30,11 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build mod
-        run: ./gradlew clean build --no-daemon
+        id: build
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew clean build --no-daemon 2>&1 | tee build.log
 
       - name: Verify JAR contains compiled classes
         shell: bash
@@ -40,7 +44,16 @@ jobs:
           test "$(unzip -l "$jar" | awk '/\.class$/ { count++ } END { print count + 0 }')" -gt 20
           echo "Built: $jar"
 
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgradermod-build-log
+          path: build.log
+          if-no-files-found: warn
+
       - name: Upload mod JAR
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: upgradermod-forge-1.20.1
