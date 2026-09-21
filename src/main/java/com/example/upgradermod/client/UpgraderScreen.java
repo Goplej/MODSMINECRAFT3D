@@ -106,7 +106,7 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
                 .bounds(x + 232, y + 165, 20, 20).build());
 
         if (this.minecraft != null && this.minecraft.player != null) {
-            this.minecraft.player.playSound(SoundEvents.UI_BUTTON_CLICK, 0.55F, 1.0F);
+            this.minecraft.player.playSound(SoundEvents.UI_BUTTON_CLICK.value(), 0.55F, 1.0F);
         }
         updateButtonStates();
     }
@@ -153,8 +153,8 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     }
 
     @Override
-    public void tick() {
-        super.tick();
+    protected void containerTick() {
+        super.containerTick();
 
         this.openAnimation = Math.min(1.0F, this.openAnimation + 0.15F);
         long now = System.currentTimeMillis();
