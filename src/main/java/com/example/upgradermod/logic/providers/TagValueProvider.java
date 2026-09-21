@@ -59,7 +59,21 @@ public class TagValueProvider implements ValueProvider {
             Map<String, Double> loaded = GSON.fromJson(reader, mapType);
             if (loaded != null) {
                 tagValues.clear();
-                tagValues.putAll(loaded);
+                boolean removedProjectE = false;
+                for (Map.Entry<String, Double> entry : loaded.entrySet()) {
+                    String key = entry.getKey();
+                    if (key != null && key.startsWith("projecte:")) {
+                        // На всякий случай вычищаем и теги ProjectE — ценности ProjectE не нужны.
+                        LOGGER.info("Удаляю цену ProjectE из tags.json: {} = {}", key, entry.getValue());
+                        removedProjectE = true;
+                        continue;
+                    }
+                    tagValues.put(key, entry.getValue());
+                }
+                if (removedProjectE) {
+                    saveConfig(configFile);
+                    LOGGER.info("tags.json очищен от цен ProjectE");
+                }
             }
         } catch (IOException e) {
             LOGGER.error("Ошибка при чтении tags.json: {}", e.getMessage(), e);

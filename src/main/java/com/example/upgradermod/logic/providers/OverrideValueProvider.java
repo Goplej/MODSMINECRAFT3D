@@ -56,7 +56,23 @@ public class OverrideValueProvider implements ValueProvider {
             Map<String, Double> loaded = GSON.fromJson(reader, mapType);
             if (loaded != null) {
                 overrides.clear();
-                overrides.putAll(loaded);
+                boolean removedProjectE = false;
+                for (Map.Entry<String, Double> entry : loaded.entrySet()) {
+                    String key = entry.getKey();
+                    if (key != null && key.startsWith("projecte:")) {
+                        // Старые версии мода записывали сюда цены, скопированные с EMC ProjectE.
+                        // Вычищаем их при каждой загрузке, чтобы EMC не применялись никогда.
+                        LOGGER.info("Удаляю цену ProjectE из overrides.json: {} = {}", key, entry.getValue());
+                        removedProjectE = true;
+                        continue;
+                    }
+                    overrides.put(key, entry.getValue());
+                }
+                if (removedProjectE) {
+                    // Самолечение: перезаписываем файл уже без цен ProjectE.
+                    saveConfig(configFile);
+                    LOGGER.info("overrides.json очищен от цен ProjectE");
+                }
             }
         } catch (IOException e) {
             LOGGER.error("Ошибка при чтении overrides.json: {}", e.getMessage(), e);
