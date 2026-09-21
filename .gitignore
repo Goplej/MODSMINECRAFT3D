@@ -1,41 +1,23 @@
-# Prerequisites
-*.d
+# Gradle
+.gradle/
+build/
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+bin/
+out/
 
-# Precompiled Headers
-*.gch
-*.pch
+# Forge runtime
+run/
+run-data/
+*.log
 
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
-# debug information files
-*.dwo
+# OS
+.DS_Store
+Thumbs.db
