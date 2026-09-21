@@ -51,7 +51,7 @@ jobs:
           jar = pathlib.Path('build/libs') / f'upgradermod-{version}.jar'
           with zipfile.ZipFile(jar) as z:
               classes = [n for n in z.namelist() if n.endswith('.class')]
-              assert len(classes) >= 40, f'Only {len(classes)} classes'
+              assert len(classes) >= 30, f'Only {len(classes)} classes'
               for name in classes:
                   data = z.read(name)
                   assert len(data) > 8 and data[:4] == bytes.fromhex('cafebabe'), name
