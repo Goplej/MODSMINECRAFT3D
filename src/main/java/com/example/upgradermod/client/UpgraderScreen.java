@@ -37,6 +37,10 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     private static final int GUI_WIDTH = 256;
     private static final int GUI_HEIGHT = 272;
     private static final long RESULT_DISPLAY_MS = 2000L;
+    /** Сколько показывать красное «✗ Отклонено» при reject сервера. */
+    private static final long REJECT_DISPLAY_MS = 2500L;
+    /** Клиентский таймаут ожидания результата: если сервер молчит дольше, интерфейс разблокируется. */
+    private static final long CLIENT_SPIN_TIMEOUT_MS = 10000L;
 
     private static final int BACKGROUND_COLOR = 0xFF1A1A2E;
     private static final int PANEL_COLOR = 0xFF211B30;
@@ -49,6 +53,8 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     private static final int MUTED_COLOR = 0xFF9A9AB0;
     private static final int DISABLED_COLOR = 0xFF3A3A4A;
     private static final int SUCCESS_COLOR = 0xFF44FF88;
+    private static final int FAILURE_COLOR = 0xFFFF6E6E;
+    private static final int REJECT_COLOR = 0xFFFF5555;
 
     // ---- Координаты элементов (относительно leftPos/topPos) ----
     private static final int INPUT_SLOT_X = 29;
@@ -85,6 +91,8 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     private boolean lastResult;
     private boolean hasResult;
     private double resultChance;
+    /** Момент, до которого показывается красное уведомление об отклонении спина. */
+    private long rejectDisplayUntil;
 
     /** Текущий угол стрелки компаса, 0 градусов — вверх. */
     private float arrowAngle;
@@ -108,12 +116,7 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         int y = this.topPos;
 
         this.spinButton = this.addRenderableWidget(Button.builder(
-                        Component.translatable("gui.upgradermod.spin"), button -> {
-                            if (!this.isSpinning) {
-                                startWaitingSpin();
-                                NetworkHandler.sendToServer(new SpinPacket());
-                            }
-                        })
+                        Component.translatable("gui.upgradermod.spin"), button -> trySpin())
                 .bounds(x + 16, y + ROW2_Y, 90, ROW2_H)
                 .build());
 
@@ -176,8 +179,35 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     private void startWaitingSpin() {
         this.isSpinning = true;
         this.hasResult = false;
+        this.rejectDisplayUntil = 0L;
         this.spinStartTime = System.currentTimeMillis();
         this.spinStartAngle = this.arrowAngle;
+        updateButtonStates();
+    }
+
+    /**
+     * Отправляет запрос спина на сервер. Ошибка отправки пакета не должна
+     * оставлять интерфейс заблокированным: кнопка сразу же разблокируется.
+     */
+    private void trySpin() {
+        if (this.isSpinning) {
+            return;
+        }
+        startWaitingSpin();
+        try {
+            NetworkHandler.sendToServer(new SpinPacket());
+        } catch (Throwable t) {
+            LOGGER.error("Failed to send SpinPacket", t);
+            stopWaiting("failed to send SpinPacket");
+        }
+    }
+
+    /** Разблокирует интерфейс после ожидания результата (ответ сервера или таймаут). */
+    private void stopWaiting(String reason) {
+        if (this.isSpinning) {
+            LOGGER.warn("Spin wait cancelled: {}", reason);
+        }
+        this.isSpinning = false;
         updateButtonStates();
     }
 
@@ -192,16 +222,22 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     /**
      * Получает результат броска и фиксирует рассчитанные на сервере шанс и угол.
      * Только этот пакет определяет, что увидит игрок: успех или провал.
+     * Reject сервера показывается красным «✗ Отклонено» на 2.5 секунды.
      */
     public void onSpinResult(boolean rejected, boolean success, double chance, float rollAngle) {
         this.isSpinning = false;
-        this.hasResult = !rejected;
-        this.lastResult = success;
-        this.resultChance = Mth.clamp(chance, 0.0D, 100.0D);
-        if (!rejected) {
+        long now = System.currentTimeMillis();
+        if (rejected) {
+            this.hasResult = false;
+            this.rejectDisplayUntil = now + REJECT_DISPLAY_MS;
+        } else {
+            this.hasResult = true;
+            this.lastResult = success;
+            this.resultChance = Mth.clamp(chance, 0.0D, 100.0D);
             this.arrowAngle = normalizeAngle(rollAngle);
+            this.rejectDisplayUntil = 0L;
         }
-        this.resultDisplayUntil = System.currentTimeMillis() + RESULT_DISPLAY_MS;
+        this.resultDisplayUntil = now + RESULT_DISPLAY_MS;
         updateButtonStates();
     }
 
@@ -210,8 +246,14 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         super.containerTick();
         long now = System.currentTimeMillis();
         if (this.isSpinning) {
-            // No local result prediction or timeout unlock: the server settles after 40 ticks.
-            this.arrowAngle = normalizeAngle(this.spinStartAngle + (now - this.spinStartTime) * 0.72F);
+            if (now - this.spinStartTime >= CLIENT_SPIN_TIMEOUT_MS) {
+                // Сервер молчит дольше 10 секунд — разблокируем интерфейс,
+                // чтобы кнопка КРУТИТЬ не зависала навсегда.
+                stopWaiting("no result from server within " + CLIENT_SPIN_TIMEOUT_MS + " ms");
+            } else {
+                // No local result prediction: the server settles after 40 ticks.
+                this.arrowAngle = normalizeAngle(this.spinStartAngle + (now - this.spinStartTime) * 0.72F);
+            }
         }
         if (this.hasResult && now >= this.resultDisplayUntil) this.hasResult = false;
         updateButtonStates();
@@ -220,6 +262,25 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     private static float normalizeAngle(float angle) {
         angle %= 360.0F;
         return angle < 0.0F ? angle + 360.0F : angle;
+    }
+
+    /** Показывается ли сейчас красное уведомление об отклонении спина. */
+    private boolean isRejectShowing(long now) {
+        return !this.isSpinning && now < this.rejectDisplayUntil;
+    }
+
+    /** Подсказка, объясняющая игроку, почему кнопка КРУТИТЬ неактивна. */
+    private Component inactiveHint() {
+        if (this.isSpinning) {
+            return null;
+        }
+        if (this.menu.getInputStack().isEmpty()) {
+            return Component.translatable("gui.upgradermod.hint_need_input");
+        }
+        if (this.menu.getTargetStack().isEmpty()) {
+            return Component.translatable("gui.upgradermod.hint_need_target");
+        }
+        return null;
     }
 
     private void updateButtonStates() {
@@ -446,27 +507,42 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         guiGraphics.drawCenteredString(this.font,
                 ChanceCalculator.formatChance(visibleChance()), 128, 81, TEXT_COLOR);
 
-        // Шанс и его подпись.
-        String chanceText;
-        int chanceColor;
-        if (this.hasResult && !this.isSpinning
-                && System.currentTimeMillis() < this.resultDisplayUntil) {
-            chanceText = this.lastResult
+        // Строка состояния под компасом: отклонение сервера, результат броска,
+        // подсказка для неактивной кнопки или текущий шанс.
+        long now = System.currentTimeMillis();
+        String statusText;
+        int statusColor;
+        boolean showChanceLabel = false;
+        if (this.isRejectShowing(now)) {
+            statusText = Component.translatable("gui.upgradermod.result_rejected").getString();
+            statusColor = REJECT_COLOR;
+        } else if (this.hasResult && !this.isSpinning && now < this.resultDisplayUntil) {
+            statusText = this.lastResult
                     ? Component.translatable("gui.upgradermod.result_success",
                     ChanceCalculator.formatChance(this.resultChance)).getString()
                     : Component.translatable("gui.upgradermod.result_failure").getString();
-            chanceColor = this.lastResult ? SUCCESS_COLOR : ACCENT_COLOR;
+            statusColor = this.lastResult ? SUCCESS_COLOR : FAILURE_COLOR;
         } else if (this.isSpinning) {
-            chanceText = "...";
-            chanceColor = MUTED_COLOR;
+            statusText = "...";
+            statusColor = MUTED_COLOR;
         } else {
-            chanceText = ChanceCalculator.formatChance(this.displayedChance);
-            chanceColor = ACCENT_COLOR;
+            Component hint = inactiveHint();
+            if (hint != null) {
+                // Кнопка неактивна: подсказываем, чего не хватает для спина.
+                statusText = hint.getString();
+                statusColor = ACCENT_HOVER_COLOR;
+            } else {
+                statusText = ChanceCalculator.formatChance(this.displayedChance);
+                statusColor = ACCENT_COLOR;
+                showChanceLabel = true;
+            }
         }
 
-        guiGraphics.drawCenteredString(this.font, chanceText, 128, 112, chanceColor);
-        guiGraphics.drawCenteredString(this.font,
-                Component.translatable("gui.upgradermod.chance_label"), 128, 122, MUTED_COLOR);
+        guiGraphics.drawCenteredString(this.font, statusText, 128, 112, statusColor);
+        if (showChanceLabel) {
+            guiGraphics.drawCenteredString(this.font,
+                    Component.translatable("gui.upgradermod.chance_label"), 128, 122, MUTED_COLOR);
+        }
 
         // Подпись блока количества цели.
         guiGraphics.drawCenteredString(this.font,

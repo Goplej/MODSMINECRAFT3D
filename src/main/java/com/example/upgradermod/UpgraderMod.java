@@ -2,15 +2,22 @@ package com.example.upgradermod;
 
 import com.example.upgradermod.logic.ItemRegistryCache;
 import com.example.upgradermod.logic.ValueProviderRegistry;
+import com.example.upgradermod.menu.UpgraderMenu;
 import com.example.upgradermod.network.NetworkHandler;
 import com.example.upgradermod.registry.ModItems;
 import com.example.upgradermod.registry.ModMenus;
 import com.example.upgradermod.registry.ModSounds;
 import com.mojang.logging.LogUtils;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig.Type;
@@ -55,28 +62,53 @@ public class UpgraderMod {
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::addCreative);
 
-        // Регистрация на шине событий Forge
+        // Регистрация на шине событий Forge: методы с @SubscribeEvent ниже
+        // (onServerTick, onPlayerLogout, onPlayerDeath) подписываются именно здесь.
         MinecraftForge.EVENT_BUS.register(this);
-        MinecraftForge.EVENT_BUS.addListener(this::serverTick);
-        MinecraftForge.EVENT_BUS.addListener(this::playerLogout);
-        MinecraftForge.EVENT_BUS.addListener(net.minecraftforge.eventbus.api.EventPriority.LOWEST, this::playerDeath);
 
         LOGGER.info("Upgrader Mod успешно загружен и ожидает commonSetup.");
     }
 
-    private void serverTick(net.minecraftforge.event.TickEvent.ServerTickEvent event) {
-        if (event.phase == net.minecraftforge.event.TickEvent.Phase.END) {
-            com.example.upgradermod.menu.UpgraderMenu.tickPending(event.getServer());
+    /**
+     * Тик логического сервера. Завершает отложенные спины (PENDING) ровно через
+     * 40 тиков после принятия ставки. Без этого события отложенный спин
+     * никогда не завершится и игрок не увидит результат.
+     */
+    @SubscribeEvent
+    public void onServerTick(TickEvent.ServerTickEvent event) {
+        if (event.phase == TickEvent.Phase.END) {
+            try {
+                UpgraderMenu.tickPending(event.getServer());
+            } catch (Throwable t) {
+                LOGGER.error("onServerTick error", t);
+            }
         }
     }
 
-    private void playerLogout(net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
-        com.example.upgradermod.menu.UpgraderMenu.settlePending(event.getEntity());
+    /**
+     * Выход игрока с сервера: завершаем отложенный спин до сохранения данных игрока.
+     */
+    @SubscribeEvent
+    public void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        try {
+            UpgraderMenu.settlePending(event.getEntity());
+        } catch (Throwable t) {
+            LOGGER.error("onPlayerLogout error", t);
+        }
     }
 
-    private void playerDeath(net.minecraftforge.event.entity.living.LivingDeathEvent event) {
-        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {
-            com.example.upgradermod.menu.UpgraderMenu.settlePending(player);
+    /**
+     * Смерть игрока: завершаем отложенный спин до выпадения инвентаря,
+     * чтобы награда попала в дроп вместе с остальными предметами.
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public void onPlayerDeath(LivingDeathEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            try {
+                UpgraderMenu.settlePending(player);
+            } catch (Throwable t) {
+                LOGGER.error("onPlayerDeath error", t);
+            }
         }
     }
 
