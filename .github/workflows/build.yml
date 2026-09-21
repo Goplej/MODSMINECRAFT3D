@@ -1,0 +1,98 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build mod jar
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build with Gradle
+        run: ./gradlew build --no-daemon --stacktrace
+
+      - name: List produced artifacts
+        run: ls -la build/libs
+
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgradermod-jar
+          path: build/libs/*.jar
+          if-no-files-found: error
+
+  package-source:
+    name: Package clean source archive
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create upgradermod.zip (without build/.gradle/run/.idea)
+        run: |
+          rm -f upgradermod.zip
+          zip -r upgradermod.zip . \
+            -x '.git/*' '.git' 'build/*' '.gradle/*' 'run/*' 'run-data/*' \
+               '.idea/*' '*.iml' '*.log' 'upgradermod.zip'
+
+      - name: Verify archive contents
+        run: |
+          unzip -Z1 upgradermod.zip
+          if unzip -Z1 upgradermod.zip | grep -Eq '^(build|\.gradle|run|run-data|\.idea|\.git)/'; then
+            echo "::error::Archive contains forbidden temporary directories"
+            exit 1
+          fi
+          echo "Archive is clean."
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgradermod-source-zip
+          path: upgradermod.zip
+
+  release:
+    name: Publish release
+    needs: [build, package-source]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Show downloaded files
+        run: find artifacts -type f
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/upgradermod-jar/*.jar
+            artifacts/upgradermod-source-zip/upgradermod.zip
