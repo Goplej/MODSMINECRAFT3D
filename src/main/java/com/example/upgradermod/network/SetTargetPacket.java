@@ -62,9 +62,13 @@ public class SetTargetPacket {
     public static void handle(SetTargetPacket msg, Supplier<NetworkEvent.Context> ctxSupp) {
         NetworkEvent.Context ctx = ctxSupp.get();
         ctx.enqueueWork(() -> {
-            ServerPlayer player = ctx.getSender();
-            if (player != null && player.containerMenu instanceof UpgraderMenu menu) {
-                menu.setTargetStack(msg.target);
+            try {
+                ServerPlayer player = ctx.getSender();
+                if (player != null && player.containerMenu instanceof UpgraderMenu menu) {
+                    menu.setTargetStack(msg.target);
+                }
+            } catch (Throwable t) {
+                com.mojang.logging.LogUtils.getLogger().error("SetTargetPacket error", t);
             }
         });
         ctx.setPacketHandled(true);

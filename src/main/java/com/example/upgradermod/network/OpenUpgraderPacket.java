@@ -34,21 +34,25 @@ public final class OpenUpgraderPacket {
     public static void handle(OpenUpgraderPacket msg, Supplier<NetworkEvent.Context> ctxSupplier) {
         NetworkEvent.Context ctx = ctxSupplier.get();
         ctx.enqueueWork(() -> {
-            ServerPlayer player = ctx.getSender();
-            if (player == null) {
-                return;
-            }
+            try {
+                ServerPlayer player = ctx.getSender();
+                if (player == null) {
+                    return;
+                }
 
-            boolean hasUpgrader = player.getInventory().items.stream()
-                    .anyMatch(stack -> stack.is(ModItems.UPGRADER.get()));
-            if (!hasUpgrader) {
-                return;
-            }
+                boolean hasUpgrader = player.getInventory().items.stream()
+                        .anyMatch(stack -> stack.is(ModItems.UPGRADER.get()));
+                if (!hasUpgrader) {
+                    return;
+                }
 
-            NetworkHooks.openScreen(player, new SimpleMenuProvider(
-                    (containerId, inventory, ignored) -> new UpgraderMenu(containerId, inventory),
-                    Component.translatable("gui.upgradermod.title")
-            ));
+                NetworkHooks.openScreen(player, new SimpleMenuProvider(
+                        (containerId, inventory, ignored) -> new UpgraderMenu(containerId, inventory),
+                        Component.translatable("gui.upgradermod.title")
+                ));
+            } catch (Throwable t) {
+                com.mojang.logging.LogUtils.getLogger().error("OpenUpgraderPacket error", t);
+            }
         });
         ctx.setPacketHandled(true);
     }

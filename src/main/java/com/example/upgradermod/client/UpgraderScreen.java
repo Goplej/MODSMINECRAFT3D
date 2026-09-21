@@ -8,6 +8,7 @@ import com.example.upgradermod.network.NetworkHandler;
 import com.example.upgradermod.network.SetMultiplierPacket;
 import com.example.upgradermod.network.SetTargetCountPacket;
 import com.example.upgradermod.network.SpinPacket;
+import com.mojang.logging.LogUtils;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -17,6 +18,7 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.slf4j.Logger;
 
 /**
  * Графический интерфейс апгрейдера с тёмной темой, компасом и рулеткой.
@@ -29,6 +31,8 @@ import net.minecraftforge.api.distmarker.OnlyIn;
  */
 @OnlyIn(Dist.CLIENT)
 public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private static final int GUI_WIDTH = 256;
     private static final int GUI_HEIGHT = 272;
@@ -248,6 +252,17 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        try {
+            renderInternal(guiGraphics, mouseX, mouseY, partialTick);
+        } catch (Throwable t) {
+            LOGGER.error("UpgraderScreen render error", t);
+            if (this.minecraft != null) {
+                this.minecraft.setScreen(null);
+            }
+        }
+    }
+
+    private void renderInternal(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         this.renderBackground(guiGraphics);
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 

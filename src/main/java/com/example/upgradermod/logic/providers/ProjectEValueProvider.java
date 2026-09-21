@@ -46,9 +46,9 @@ public class ProjectEValueProvider implements ValueProvider {
                 }
             }
         } catch (ClassNotFoundException | NoSuchMethodException e) {
-            LOGGER.warn("ProjectE API или метод getValue(ItemStack) не найден: {}", e.getMessage());
-        } catch (Exception e) {
-            LOGGER.error("Ошибка при получении EMC через Reflection: {}", e.getMessage(), e);
+            LOGGER.debug("ProjectE API not found or incompatible: {}", e.getMessage());
+        } catch (Throwable t) {
+            LOGGER.debug("ProjectE reflection error: {}", t.getMessage());
         }
 
         return 0.0;

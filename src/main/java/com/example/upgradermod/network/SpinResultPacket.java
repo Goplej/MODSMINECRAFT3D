@@ -92,12 +92,20 @@ public class SpinResultPacket {
     public static void handle(SpinResultPacket msg, Supplier<NetworkEvent.Context> ctxSupp) {
         NetworkEvent.Context ctx = ctxSupp.get();
         ctx.enqueueWork(() -> {
-            DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
-                if (Minecraft.getInstance().screen instanceof UpgraderScreen upgraderScreen
-                        && upgraderScreen.getMenu().containerId == msg.containerId) {
-                    upgraderScreen.onSpinResult(msg.rejected, msg.success, msg.chance, msg.rollAngle);
-                }
-            });
+            try {
+                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+                    try {
+                        if (Minecraft.getInstance().screen instanceof UpgraderScreen upgraderScreen
+                                && upgraderScreen.getMenu().containerId == msg.containerId) {
+                            upgraderScreen.onSpinResult(msg.rejected, msg.success, msg.chance, msg.rollAngle);
+                        }
+                    } catch (Throwable t) {
+                        com.mojang.logging.LogUtils.getLogger().error("SpinResultPacket client error", t);
+                    }
+                });
+            } catch (Throwable t) {
+                com.mojang.logging.LogUtils.getLogger().error("SpinResultPacket error", t);
+            }
         });
         ctx.setPacketHandled(true);
     }

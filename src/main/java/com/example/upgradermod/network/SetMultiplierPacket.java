@@ -61,9 +61,13 @@ public class SetMultiplierPacket {
     public static void handle(SetMultiplierPacket msg, Supplier<NetworkEvent.Context> ctxSupp) {
         NetworkEvent.Context ctx = ctxSupp.get();
         ctx.enqueueWork(() -> {
-            ServerPlayer player = ctx.getSender();
-            if (player != null && player.containerMenu instanceof UpgraderMenu menu) {
-                menu.setMultiplier(msg.multiplier);
+            try {
+                ServerPlayer player = ctx.getSender();
+                if (player != null && player.containerMenu instanceof UpgraderMenu menu) {
+                    menu.setMultiplier(msg.multiplier);
+                }
+            } catch (Throwable t) {
+                com.mojang.logging.LogUtils.getLogger().error("SetMultiplierPacket error", t);
             }
         });
         ctx.setPacketHandled(true);

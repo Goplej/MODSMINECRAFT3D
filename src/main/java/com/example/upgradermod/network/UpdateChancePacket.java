@@ -34,8 +34,12 @@ public final class UpdateChancePacket {
     public static void handle(UpdateChancePacket message, Supplier<NetworkEvent.Context> contextSupplier) {
         NetworkEvent.Context context = contextSupplier.get();
         context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
-            if (Minecraft.getInstance().screen instanceof UpgraderScreen screen) {
-                screen.onChanceUpdate(message.chance);
+            try {
+                if (Minecraft.getInstance().screen instanceof UpgraderScreen screen) {
+                    screen.onChanceUpdate(message.chance);
+                }
+            } catch (Throwable t) {
+                com.mojang.logging.LogUtils.getLogger().error("UpdateChancePacket error", t);
             }
         }));
         context.setPacketHandled(true);

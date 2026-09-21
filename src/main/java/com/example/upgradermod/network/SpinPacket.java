@@ -1,9 +1,11 @@
 package com.example.upgradermod.network;
 
 import com.example.upgradermod.menu.UpgraderMenu;
+import com.mojang.logging.LogUtils;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
+import org.slf4j.Logger;
 
 import java.util.function.Supplier;
 
@@ -13,6 +15,8 @@ import java.util.function.Supplier;
  * @author Popipok
  */
 public class SpinPacket {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     /**
      * Конструктор пакета прокрутки.
@@ -49,9 +53,13 @@ public class SpinPacket {
     public static void handle(SpinPacket msg, Supplier<NetworkEvent.Context> ctxSupp) {
         NetworkEvent.Context ctx = ctxSupp.get();
         ctx.enqueueWork(() -> {
-            ServerPlayer player = ctx.getSender();
-            if (player != null && player.containerMenu instanceof UpgraderMenu menu) {
-                menu.doSpin(player);
+            try {
+                ServerPlayer player = ctx.getSender();
+                if (player != null && player.containerMenu instanceof UpgraderMenu menu) {
+                    menu.doSpin(player);
+                }
+            } catch (Throwable t) {
+                LOGGER.error("SpinPacket handle error", t);
             }
         });
         ctx.setPacketHandled(true);

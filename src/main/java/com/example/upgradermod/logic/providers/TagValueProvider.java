@@ -83,25 +83,30 @@ public class TagValueProvider implements ValueProvider {
 
     @Override
     public double getValue(ItemStack stack) {
-        if (stack.isEmpty()) {
-            return 0.0;
-        }
+        try {
+            if (stack.isEmpty()) {
+                return 0.0;
+            }
 
-        double maxVal = 0.0;
-        for (Map.Entry<String, Double> entry : tagValues.entrySet()) {
-            ResourceLocation tagLoc = ResourceLocation.tryParse(entry.getKey());
-            if (tagLoc != null) {
-                TagKey<Item> tagKey = TagKey.create(Registries.ITEM, tagLoc);
-                if (stack.is(tagKey)) {
-                    double val = entry.getValue();
-                    if (val > maxVal) {
-                        maxVal = val;
+            double maxVal = 0.0;
+            for (Map.Entry<String, Double> entry : tagValues.entrySet()) {
+                ResourceLocation tagLoc = ResourceLocation.tryParse(entry.getKey());
+                if (tagLoc != null) {
+                    TagKey<Item> tagKey = TagKey.create(Registries.ITEM, tagLoc);
+                    if (stack.is(tagKey)) {
+                        double val = entry.getValue();
+                        if (val > maxVal) {
+                            maxVal = val;
+                        }
                     }
                 }
             }
-        }
 
-        return maxVal;
+            return maxVal;
+        } catch (Throwable t) {
+            LOGGER.debug("TagValueProvider error: {}", t.getMessage());
+            return 0.0;
+        }
     }
 
     @Override

@@ -36,20 +36,25 @@ public class RecipeValueProvider implements ValueProvider {
 
     @Override
     public double getValue(ItemStack stack) {
-        if (stack.isEmpty()) {
+        try {
+            if (stack.isEmpty()) {
+                return 0.0;
+            }
+
+            Item item = stack.getItem();
+            if (recipeCache.containsKey(item)) {
+                return recipeCache.get(item);
+            }
+
+            double val = calculateRecipeValue(item, 0, new HashSet<>());
+            if (val > 0) {
+                recipeCache.put(item, val);
+            }
+            return val;
+        } catch (Throwable t) {
+            LOGGER.debug("RecipeValueProvider error: {}", t.getMessage());
             return 0.0;
         }
-
-        Item item = stack.getItem();
-        if (recipeCache.containsKey(item)) {
-            return recipeCache.get(item);
-        }
-
-        double val = calculateRecipeValue(item, 0, new HashSet<>());
-        if (val > 0) {
-            recipeCache.put(item, val);
-        }
-        return val;
     }
 
     /**
@@ -61,21 +66,22 @@ public class RecipeValueProvider implements ValueProvider {
      * @return вычисленная стоимость
      */
     public double calculateRecipeValue(Item item, int depth, Set<Item> visited) {
-        if (depth > ModConfig.getRecipeMaxDepth()) {
-            return 0.0;
-        }
+        try {
+            if (depth > ModConfig.getRecipeMaxDepth()) {
+                return 0.0;
+            }
 
-        if (visited.contains(item)) {
-            return 0.0;
-        }
+            if (visited.contains(item)) {
+                return 0.0;
+            }
 
-        RecipeManager recipeManager = getRecipeManager();
-        if (recipeManager == null) {
-            return 0.0;
-        }
+            RecipeManager recipeManager = getRecipeManager();
+            if (recipeManager == null) {
+                return 0.0;
+            }
 
-        visited.add(item);
-        RegistryAccess registryAccess = RegistryAccess.EMPTY;
+            visited.add(item);
+            RegistryAccess registryAccess = RegistryAccess.EMPTY;
 
         double minCost = Double.MAX_VALUE;
         List<? extends Double> depthMultipliers = ModConfig.getRecipeDepthMultipliers();
@@ -138,13 +144,17 @@ public class RecipeValueProvider implements ValueProvider {
             }
         }
 
-        visited.remove(item);
+            visited.remove(item);
 
-        if (minCost != Double.MAX_VALUE && minCost > 0) {
-            return Math.min(ModConfig.getRecipeMaxPrice(), minCost);
+            if (minCost != Double.MAX_VALUE && minCost > 0) {
+                return Math.min(ModConfig.getRecipeMaxPrice(), minCost);
+            }
+
+            return 0.0;
+        } catch (Throwable t) {
+            LOGGER.debug("RecipeValueProvider.calculateRecipeValue error: {}", t.getMessage());
+            return 0.0;
         }
-
-        return 0.0;
     }
 
     /**
