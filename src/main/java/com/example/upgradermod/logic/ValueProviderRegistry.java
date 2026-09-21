@@ -30,7 +30,6 @@ public class ValueProviderRegistry {
         }
 
         register(new OverrideValueProvider());     // 1000
-        register(new ProjectEValueProvider());    // 900
         register(new ManualJsonValueProvider());  // 800
         register(new RecipeValueProvider());      // 700
         register(new TagValueProvider());         // 500

@@ -67,8 +67,6 @@ public class ModConfig {
         public final ForgeConfigSpec.LongValue recipeMaxPrice;
         public final ForgeConfigSpec.ConfigValue<List<? extends Double>> recipeDepthMultipliers;
 
-        public final ForgeConfigSpec.BooleanValue useProjectEValues;
-
         public final ForgeConfigSpec.BooleanValue taxEnabled;
         public final ForgeConfigSpec.ConfigValue<String> taxItem;
         public final ForgeConfigSpec.IntValue taxAmount;
@@ -106,13 +104,6 @@ public class ModConfig {
                     .defineListAllowEmpty(List.of("recipeDepthMultipliers"),
                             () -> Arrays.asList(1.0, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0),
                             o -> o instanceof Double);
-            builder.pop();
-
-            builder.comment("Источники ценности предметов").push("values");
-            useProjectEValues = builder.comment(
-                            "Брать базовую ценность предметов из EMC мода ProjectE (за один предмет). " +
-                                    "По умолчанию выключено: ценности берутся из overrides.json, values.json, рецептов, тегов, аналогов и эвристики")
-                    .define("useProjectEValues", false);
             builder.pop();
 
             builder.comment("Параметры комиссии/налога за прокрутку").push("tax");
@@ -212,13 +203,6 @@ public class ModConfig {
      */
     public static List<? extends Double> getRecipeDepthMultipliers() {
         return COMMON.recipeDepthMultipliers.get();
-    }
-
-    /**
-     * @return Использовать ли EMC из ProjectE как базовую ценность предметов
-     */
-    public static boolean isUseProjectEValues() {
-        return COMMON.useProjectEValues.get();
     }
 
     /**

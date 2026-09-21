@@ -69,8 +69,6 @@ public class OverrideValueProvider implements ValueProvider {
         overrides.put("avaritia:infinity_catalyst", 100000000.0);
         overrides.put("avaritia:cosmic_neutronium_ingot", 500000000.0);
         overrides.put("avaritia:infinity_sword", 2560000000.0);
-        overrides.put("projecte:dm_block", 1048576.0);
-        overrides.put("projecte:rm_block", 262144.0);
     }
 
     private void saveConfig(File configFile) {
