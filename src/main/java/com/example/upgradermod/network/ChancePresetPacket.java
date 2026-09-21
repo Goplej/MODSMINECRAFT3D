@@ -64,9 +64,13 @@ public final class ChancePresetPacket {
     public static void handle(ChancePresetPacket msg, Supplier<NetworkEvent.Context> ctxSupp) {
         NetworkEvent.Context ctx = ctxSupp.get();
         ctx.enqueueWork(() -> {
-            ServerPlayer player = ctx.getSender();
-            if (player != null && player.containerMenu instanceof UpgraderMenu menu) {
-                menu.applyChancePreset(msg.percent);
+            try {
+                ServerPlayer player = ctx.getSender();
+                if (player != null && player.containerMenu instanceof UpgraderMenu menu) {
+                    menu.applyChancePreset(msg.percent);
+                }
+            } catch (Throwable t) {
+                com.mojang.logging.LogUtils.getLogger().error("ChancePresetPacket error", t);
             }
         });
         ctx.setPacketHandled(true);

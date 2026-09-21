@@ -362,6 +362,15 @@ public class UpgraderMenu extends AbstractContainerMenu {
      * @param player игрок, выполняющий апгрейд
      */
     public void doSpin(ServerPlayer player) {
+        try {
+            doSpinInternal(player);
+        } catch (Throwable t) {
+            LOGGER.error("doSpin error for player {}", player.getName().getString(), t);
+            rejectSpin(player);
+        }
+    }
+
+    private void doSpinInternal(ServerPlayer player) {
         if (isLocked()) {
             // A duplicate request must not stop the currently running animation.
             if (!spinning) rejectSpin(player);

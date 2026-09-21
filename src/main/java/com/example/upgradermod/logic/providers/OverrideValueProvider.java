@@ -83,19 +83,24 @@ public class OverrideValueProvider implements ValueProvider {
 
     @Override
     public double getValue(ItemStack stack) {
-        if (stack.isEmpty()) {
+        try {
+            if (stack.isEmpty()) {
+                return 0.0;
+            }
+
+            ResourceLocation key = ForgeRegistries.ITEMS.getKey(stack.getItem());
+            if (key != null) {
+                Double val = overrides.get(key.toString());
+                if (val != null && val > 0) {
+                    return val;
+                }
+            }
+
+            return 0.0;
+        } catch (Throwable t) {
+            LOGGER.debug("OverrideValueProvider error: {}", t.getMessage());
             return 0.0;
         }
-
-        ResourceLocation key = ForgeRegistries.ITEMS.getKey(stack.getItem());
-        if (key != null) {
-            Double val = overrides.get(key.toString());
-            if (val != null && val > 0) {
-                return val;
-            }
-        }
-
-        return 0.0;
     }
 
     @Override

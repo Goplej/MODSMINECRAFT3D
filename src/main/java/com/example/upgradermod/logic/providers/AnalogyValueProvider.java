@@ -1,9 +1,11 @@
 package com.example.upgradermod.logic.providers;
 
 import com.example.upgradermod.logic.ValueProvider;
+import com.mojang.logging.LogUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
+import org.slf4j.Logger;
 
 /**
  * Провайдер аналогии для ванильных предметов.
@@ -14,11 +16,14 @@ import net.minecraftforge.registries.ForgeRegistries;
  */
 public class AnalogyValueProvider implements ValueProvider {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     @Override
     public double getValue(ItemStack stack) {
-        if (stack.isEmpty()) {
-            return 0.0;
-        }
+        try {
+            if (stack.isEmpty()) {
+                return 0.0;
+            }
 
         ResourceLocation key = ForgeRegistries.ITEMS.getKey(stack.getItem());
         if (key == null || !"minecraft".equals(key.getNamespace())) {
@@ -122,6 +127,10 @@ public class AnalogyValueProvider implements ValueProvider {
         }
 
         return 0.0;
+        } catch (Throwable t) {
+            LOGGER.debug("AnalogyValueProvider error: {}", t.getMessage());
+            return 0.0;
+        }
     }
 
     private double getArmorToolValue(String path, String materialPrefix, double materialCost) {

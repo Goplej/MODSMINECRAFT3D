@@ -6,6 +6,7 @@ import com.example.upgradermod.logic.ValueCalculator;
 import com.example.upgradermod.menu.UpgraderMenu;
 import com.example.upgradermod.network.NetworkHandler;
 import com.example.upgradermod.network.SetTargetPacket;
+import com.mojang.logging.LogUtils;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -15,6 +16,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +31,8 @@ import java.util.List;
  */
 @OnlyIn(Dist.CLIENT)
 public class CatalogScreen extends Screen {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private static final int GUI_WIDTH = 256;
     private static final int GUI_HEIGHT = 220;
@@ -136,6 +140,17 @@ public class CatalogScreen extends Screen {
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        try {
+            renderInternal(guiGraphics, mouseX, mouseY, partialTick);
+        } catch (Throwable t) {
+            LOGGER.error("CatalogScreen render error", t);
+            if (this.minecraft != null) {
+                this.minecraft.setScreen(null);
+            }
+        }
+    }
+
+    private void renderInternal(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         this.renderBackground(guiGraphics);
 
         int x = this.leftPos;

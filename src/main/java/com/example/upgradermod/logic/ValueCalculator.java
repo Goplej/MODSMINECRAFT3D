@@ -2,12 +2,14 @@ package com.example.upgradermod.logic;
 
 import com.example.upgradermod.ModConfig;
 import com.google.common.collect.Multimap;
+import com.mojang.logging.LogUtils;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import org.slf4j.Logger;
 
 import java.util.Map;
 
@@ -18,6 +20,8 @@ import java.util.Map;
  * @author Popipok
  */
 public class ValueCalculator {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     /**
      * Вычисляет базовую ценность одного предмета без учёта размера стака,
@@ -36,18 +40,26 @@ public class ValueCalculator {
             if (provider instanceof com.example.upgradermod.logic.providers.RecipeValueProvider) {
                 continue;
             }
-            double val = provider.getValue(stack);
-            if (val > 0) {
-                return Math.min(ModConfig.getRecipeMaxPrice(), val);
+            try {
+                double val = provider.getValue(stack);
+                if (val > 0) {
+                    return Math.min(ModConfig.getRecipeMaxPrice(), val);
+                }
+            } catch (Throwable t) {
+                LOGGER.debug("Provider {} threw in getSingleItemValue: {}", provider.getName(), t.getMessage());
             }
         }
 
         // Если другие провайдеры не дали результат, пробуем RecipeValueProvider
         for (ValueProvider provider : ValueProviderRegistry.getProviders()) {
             if (provider instanceof com.example.upgradermod.logic.providers.RecipeValueProvider) {
-                double val = provider.getValue(stack);
-                if (val > 0) {
-                    return Math.min(ModConfig.getRecipeMaxPrice(), val);
+                try {
+                    double val = provider.getValue(stack);
+                    if (val > 0) {
+                        return Math.min(ModConfig.getRecipeMaxPrice(), val);
+                    }
+                } catch (Throwable t) {
+                    LOGGER.debug("RecipeValueProvider threw in getSingleItemValue: {}", t.getMessage());
                 }
             }
         }
@@ -69,10 +81,14 @@ public class ValueCalculator {
 
         double singleVal = 0.0;
         for (ValueProvider provider : ValueProviderRegistry.getProviders()) {
-            double val = provider.getValue(stack);
-            if (val > 0) {
-                singleVal = val;
-                break;
+            try {
+                double val = provider.getValue(stack);
+                if (val > 0) {
+                    singleVal = val;
+                    break;
+                }
+            } catch (Throwable t) {
+                LOGGER.debug("Provider {} threw in getItemStackValue: {}", provider.getName(), t.getMessage());
             }
         }
 
@@ -83,35 +99,47 @@ public class ValueCalculator {
         // Умножаем на размер стака
         double totalValue = singleVal * stack.getCount();
 
-        // Добавляем бонус за зачарования
-        Map<Enchantment, Integer> enchantments = EnchantmentHelper.getEnchantments(stack);
-        for (Map.Entry<Enchantment, Integer> entry : enchantments.entrySet()) {
-            Enchantment ench = entry.getKey();
-            int level = entry.getValue();
+        try {
+            // Добавляем бонус за зачарования
+            Map<Enchantment, Integer> enchantments = EnchantmentHelper.getEnchantments(stack);
+            for (Map.Entry<Enchantment, Integer> entry : enchantments.entrySet()) {
+                Enchantment ench = entry.getKey();
+                int level = entry.getValue();
 
-            int weight = switch (ench.getRarity()) {
-                case COMMON -> ModConfig.getEnchantWeightCommon();
-                case UNCOMMON -> (ModConfig.getEnchantWeightCommon() + ModConfig.getEnchantWeightRare()) / 2;
-                case RARE -> ModConfig.getEnchantWeightRare();
-                case VERY_RARE -> ModConfig.getEnchantWeightLegendary();
-            };
+                int weight = switch (ench.getRarity()) {
+                    case COMMON -> ModConfig.getEnchantWeightCommon();
+                    case UNCOMMON -> (ModConfig.getEnchantWeightCommon() + ModConfig.getEnchantWeightRare()) / 2;
+                    case RARE -> ModConfig.getEnchantWeightRare();
+                    case VERY_RARE -> ModConfig.getEnchantWeightLegendary();
+                };
 
-            totalValue += (double) weight * level;
+                totalValue += (double) weight * level;
+            }
+        } catch (Throwable t) {
+            LOGGER.debug("Enchantment bonus calculation failed: {}", t.getMessage());
         }
 
-        // Бонус за атрибуты (например, дополнительный урон или броня)
-        for (EquipmentSlot slot : EquipmentSlot.values()) {
-            Multimap<Attribute, AttributeModifier> modifiers = stack.getAttributeModifiers(slot);
-            if (!modifiers.isEmpty()) {
-                totalValue += modifiers.size() * ModConfig.getAttributeWeight();
+        try {
+            // Бонус за атрибуты (например, дополнительный урон или броня)
+            for (EquipmentSlot slot : EquipmentSlot.values()) {
+                Multimap<Attribute, AttributeModifier> modifiers = stack.getAttributeModifiers(slot);
+                if (!modifiers.isEmpty()) {
+                    totalValue += modifiers.size() * ModConfig.getAttributeWeight();
+                }
             }
+        } catch (Throwable t) {
+            LOGGER.debug("Attribute bonus calculation failed: {}", t.getMessage());
         }
 
         // Учёт повреждения (прочности)
-        if (stack.isDamageableItem() && stack.getMaxDamage() > 0) {
-            double durabilityRatio = 1.0 - ((double) stack.getDamageValue() / (double) stack.getMaxDamage());
-            durabilityRatio = Math.max(0.1, Math.min(1.0, durabilityRatio));
-            totalValue *= durabilityRatio;
+        try {
+            if (stack.isDamageableItem() && stack.getMaxDamage() > 0) {
+                double durabilityRatio = 1.0 - ((double) stack.getDamageValue() / (double) stack.getMaxDamage());
+                durabilityRatio = Math.max(0.1, Math.min(1.0, durabilityRatio));
+                totalValue *= durabilityRatio;
+            }
+        } catch (Throwable t) {
+            LOGGER.debug("Durability calculation failed: {}", t.getMessage());
         }
 
         // Ограничение максимальной стоимости

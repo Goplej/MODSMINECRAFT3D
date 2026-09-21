@@ -67,10 +67,14 @@ public final class SyncStatePacket {
     public static void handle(SyncStatePacket msg, Supplier<NetworkEvent.Context> ctxSupp) {
         NetworkEvent.Context ctx = ctxSupp.get();
         ctx.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
-            Minecraft minecraft = Minecraft.getInstance();
-            if (minecraft.player != null
-                    && minecraft.player.containerMenu instanceof UpgraderMenu menu) {
-                menu.applyServerSync(msg.target, msg.targetCount, msg.multiplier);
+            try {
+                Minecraft minecraft = Minecraft.getInstance();
+                if (minecraft.player != null
+                        && minecraft.player.containerMenu instanceof UpgraderMenu menu) {
+                    menu.applyServerSync(msg.target, msg.targetCount, msg.multiplier);
+                }
+            } catch (Throwable t) {
+                com.mojang.logging.LogUtils.getLogger().error("SyncStatePacket error", t);
             }
         }));
         ctx.setPacketHandled(true);

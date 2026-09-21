@@ -64,9 +64,13 @@ public final class SetTargetCountPacket {
     public static void handle(SetTargetCountPacket msg, Supplier<NetworkEvent.Context> ctxSupp) {
         NetworkEvent.Context ctx = ctxSupp.get();
         ctx.enqueueWork(() -> {
-            ServerPlayer player = ctx.getSender();
-            if (player != null && player.containerMenu instanceof UpgraderMenu menu) {
-                menu.setTargetCount(msg.count);
+            try {
+                ServerPlayer player = ctx.getSender();
+                if (player != null && player.containerMenu instanceof UpgraderMenu menu) {
+                    menu.setTargetCount(msg.count);
+                }
+            } catch (Throwable t) {
+                com.mojang.logging.LogUtils.getLogger().error("SetTargetCountPacket error", t);
             }
         });
         ctx.setPacketHandled(true);
