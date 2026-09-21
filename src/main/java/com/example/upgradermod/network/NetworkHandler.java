@@ -10,13 +10,13 @@ import net.minecraftforge.network.simple.SimpleChannel;
 
 /**
  * Обработчик сетевых пакетов мода Upgrader Mod.
- * Использует SimpleChannel протокол "1".
+ * Использует SimpleChannel протокол "2".
  *
  * @author Popipok
  */
 public class NetworkHandler {
 
-    private static final String PROTOCOL_VERSION = "1";
+    private static final String PROTOCOL_VERSION = "2";
     private static int packetId = 0;
 
     /**

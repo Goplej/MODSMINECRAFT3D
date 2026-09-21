@@ -22,6 +22,10 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.inventory.ClickType;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -60,6 +64,38 @@ public class UpgraderMenu extends AbstractContainerMenu {
     /** Серверный множитель награды (1, 2, 4, 8 или 10). */
     private int multiplier = 1;
 
+    // Accessed only on the logical server thread, including closed menus.
+    private static final Map<UUID, UpgraderMenu> PENDING = new HashMap<>();
+    private boolean spinning;
+    private int resolveTick;
+    private boolean pendingSuccess;
+    private double pendingChance;
+    private float pendingAngle;
+    private ItemStack pendingTarget = ItemStack.EMPTY;
+    private int pendingCount;
+
+    public static void tickPending(net.minecraft.server.MinecraftServer server) {
+        for (UpgraderMenu menu : java.util.List.copyOf(PENDING.values())) {
+            if (server.getTickCount() >= menu.resolveTick) menu.finalizeSpin();
+        }
+    }
+
+    // Settle before logout saves player data or death drops the inventory.
+    public static void settlePending(Player player) {
+        UpgraderMenu menu = PENDING.get(player.getUUID());
+        if (menu != null) menu.finalizeSpin();
+    }
+
+    private boolean isLocked() {
+        return spinning || (playerInventory.player instanceof ServerPlayer
+                && PENDING.containsKey(playerInventory.player.getUUID()));
+    }
+
+    @Override
+    public void clicked(int slot, int button, ClickType type, Player player) {
+        if (!isLocked()) super.clicked(slot, button, type, player);
+    }
+
     private double lastSentChance = Double.NaN;
     private ItemStack lastSyncedTarget = ItemStack.EMPTY;
     private int lastSyncedCount = -1;
@@ -75,19 +111,19 @@ public class UpgraderMenu extends AbstractContainerMenu {
         super(ModMenus.UPGRADER_MENU.get(), containerId);
         this.playerInventory = playerInventory;
 
-        // Слот 0: входной слот (ставка), соответствует раскладке GUI 256x256.
+        // Слот 0: входной слот (ставка), соответствует раскладке GUI 256x272.
         this.addSlot(new InputSlot(this.inputContainer, 0, 29, 29));
 
         // Слоты 1-27: основной инвентарь игрока (3 ряда по 9 слотов).
         for (int row = 0; row < 3; ++row) {
             for (int col = 0; col < 9; ++col) {
-                this.addSlot(new Slot(playerInventory, col + row * 9 + 9, 48 + col * 18, 175 + row * 18));
+                this.addSlot(new Slot(playerInventory, col + row * 9 + 9, 48 + col * 18, 187 + row * 18));
             }
         }
 
         // Слоты 28-36: хотбар игрока (9 слотов).
         for (int col = 0; col < 9; ++col) {
-            this.addSlot(new Slot(playerInventory, col, 48 + col * 18, 233));
+            this.addSlot(new Slot(playerInventory, col, 48 + col * 18, 245));
         }
     }
 
@@ -106,7 +142,7 @@ public class UpgraderMenu extends AbstractContainerMenu {
         super.broadcastChanges();
 
         if (this.playerInventory.player instanceof ServerPlayer serverPlayer) {
-            double chance = calculateChance();
+            double chance = spinning ? pendingChance : calculateChance();
             if (Double.doubleToLongBits(chance) != Double.doubleToLongBits(this.lastSentChance)) {
                 this.lastSentChance = chance;
                 NetworkHandler.sendToPlayer(serverPlayer, new UpdateChancePacket(chance));
@@ -146,6 +182,7 @@ public class UpgraderMenu extends AbstractContainerMenu {
 
     @Override
     public ItemStack quickMoveStack(Player player, int index) {
+        if (isLocked() || index < 0 || index >= slots.size()) return ItemStack.EMPTY;
         ItemStack itemstack = ItemStack.EMPTY;
         Slot slot = this.slots.get(index);
 
@@ -204,6 +241,7 @@ public class UpgraderMenu extends AbstractContainerMenu {
      * @param targetStack предмет цели
      */
     public void setTargetStack(ItemStack targetStack) {
+        if (isLocked()) return;
         if (targetStack == null || targetStack.isEmpty()
                 || ModConfig.isBlacklisted(targetStack)
                 || targetStack.is(ModItems.UPGRADER.get())) {
@@ -222,6 +260,7 @@ public class UpgraderMenu extends AbstractContainerMenu {
      * @param count запрашиваемое количество цели
      */
     public void setTargetCount(int count) {
+        if (isLocked()) return;
         this.targetCount = Mth.clamp(count, 1, MAX_TARGET_COUNT);
         broadcastChanges();
     }
@@ -250,6 +289,7 @@ public class UpgraderMenu extends AbstractContainerMenu {
      * @param multiplier множитель
      */
     public void setMultiplier(int multiplier) {
+        if (isLocked()) return;
         if (isAllowedMultiplier(multiplier)) {
             this.multiplier = multiplier;
             broadcastChanges();
@@ -280,6 +320,7 @@ public class UpgraderMenu extends AbstractContainerMenu {
      * @param percent желаемый шанс в процентах
      */
     public void applyChancePreset(int percent) {
+        if (isLocked()) return;
         if (percent != 30 && percent != 50 && percent != 80) {
             return;
         }
@@ -321,10 +362,16 @@ public class UpgraderMenu extends AbstractContainerMenu {
      * @param player игрок, выполняющий апгрейд
      */
     public void doSpin(ServerPlayer player) {
+        if (isLocked()) {
+            // A duplicate request must not stop the currently running animation.
+            if (!spinning) rejectSpin(player);
+            return;
+        }
         ItemStack input = getInputStack();
 
         // Правило 1: input.isEmpty() || target.isEmpty() → cancel
         if (input.isEmpty() || targetStack.isEmpty()) {
+            rejectSpin(player);
             return;
         }
 
@@ -332,6 +379,7 @@ public class UpgraderMenu extends AbstractContainerMenu {
         // даже если клиент изменён или прислал поддельные пакеты.
         if (ModConfig.isBlacklisted(input) || ModConfig.isBlacklisted(targetStack)
                 || input.is(ModItems.UPGRADER.get()) || targetStack.is(ModItems.UPGRADER.get())) {
+            rejectSpin(player);
             return;
         }
 
@@ -350,25 +398,30 @@ public class UpgraderMenu extends AbstractContainerMenu {
         double targetValue = ValueCalculator.getItemStackValue(targetWithCount);
 
         // Правило 2: inputValue <= 0 || targetValue <= 0 → cancel
-        if (inputValue <= 0.0 || targetValue <= 0.0) {
+        if (!Double.isFinite(inputValue) || !Double.isFinite(targetValue)
+                || inputValue <= 0.0 || targetValue <= 0.0) {
+            rejectSpin(player);
             return;
         }
 
         // Итоговая награда при успехе: количество цели * множитель.
         int rewardTotal = count * this.multiplier;
 
-        // Правило 3: одинаковый предмет и ставка уже покрывает награду → cancel
-        if (ItemStack.isSameItemSameTags(input, targetWithCount) && input.getCount() >= rewardTotal) {
+        // Правило 3: одинаковый предмет → cancel
+        if (ItemStack.isSameItemSameTags(input, targetWithCount)) {
+            rejectSpin(player);
             return;
         }
 
         // Правило 4: player.isCreative() && targetValue >= 1_000_000 → cancel
         if (player.isCreative() && targetValue >= 1000000.0 && !ModConfig.isAllowCreativeEndgame()) {
+            rejectSpin(player);
             return;
         }
 
         // Правило 5: inputValue > targetValue * maxDowngradeRatio → cancel
         if (inputValue > targetValue * ModConfig.getMaxDowngradeRatio()) {
+            rejectSpin(player);
             return;
         }
 
@@ -381,10 +434,16 @@ public class UpgraderMenu extends AbstractContainerMenu {
         if (ModConfig.isTaxEnabled() && !player.isCreative()) {
             String taxItemId = ModConfig.getTaxItem();
             int taxCount = ModConfig.getTaxAmount();
-            Item taxItem = ForgeRegistries.ITEMS.getValue(new ResourceLocation(taxItemId));
+            ResourceLocation taxId = ResourceLocation.tryParse(taxItemId);
+            Item taxItem = taxId == null ? null : ForgeRegistries.ITEMS.getValue(taxId);
+            if (taxItem == null || taxItem == net.minecraft.world.item.Items.AIR || taxCount < 1) {
+                rejectSpin(player);
+                return;
+            }
             if (taxItem != null) {
                 int availableTax = player.getInventory().countItem(taxItem);
                 if (availableTax < taxCount) {
+                    rejectSpin(player);
                     return; // Недостаточно предметов для оплаты налога
                 }
                 player.getInventory().clearOrCountMatchingItems(s -> s.is(taxItem), taxCount, player.inventoryMenu.getCraftSlots());
@@ -403,21 +462,43 @@ public class UpgraderMenu extends AbstractContainerMenu {
         float winSector = (float) ((chance / 100.0) * 360.0);
         float rollAngle;
         if (success) {
-            rollAngle = random.nextFloat() * Math.max(1.0f, winSector);
+            rollAngle = random.nextFloat() * winSector;
         } else {
-            rollAngle = winSector + random.nextFloat() * Math.max(1.0f, 360.0f - winSector);
+            rollAngle = winSector + random.nextFloat() * (360.0f - winSector);
         }
 
-        // Ставка сгорает всегда (при успехе игрок получает цель, при провале - теряет ставку)
+        // Snapshot the accepted transaction, then consume the stake once.
+        this.pendingSuccess = success;
+        this.pendingChance = chance;
+        this.pendingAngle = rollAngle;
+        this.pendingTarget = this.targetStack.copy();
+        this.pendingCount = rewardTotal;
+        this.resolveTick = player.getServer().getTickCount() + 40;
+        this.spinning = true;
+        PENDING.put(player.getUUID(), this);
         this.inputContainer.setItem(0, ItemStack.EMPTY);
+        this.broadcastChanges();
+    }
 
+    private void rejectSpin(ServerPlayer player) {
+        NetworkHandler.sendToPlayer(player,
+                new SpinResultPacket(containerId, true, false, 0.0, 0.0F));
+    }
+
+    private void finalizeSpin() {
+        if (!spinning) return;
+        // Clear the pending marker before awarding: repeat ticks/close/logout cannot duplicate it.
+        spinning = false;
+        ServerPlayer player = (ServerPlayer) playerInventory.player;
+        PENDING.remove(player.getUUID(), this);
+        boolean success = pendingSuccess;
         if (success) {
             // Награда разбивается на несколько ItemStack, если превышает размер стака.
-            int remaining = rewardTotal;
-            int maxStackSize = Math.max(1, this.targetStack.getMaxStackSize());
+            int remaining = pendingCount;
+            int maxStackSize = Math.max(1, this.pendingTarget.getMaxStackSize());
             while (remaining > 0) {
                 int size = Math.min(remaining, maxStackSize);
-                ItemStack reward = this.targetStack.copy();
+                ItemStack reward = this.pendingTarget.copy();
                 reward.setCount(size);
                 if (!player.getInventory().add(reward)) {
                     player.drop(reward, false);
@@ -432,11 +513,13 @@ public class UpgraderMenu extends AbstractContainerMenu {
                 0.85F,
                 success ? 1.0F : 0.8F);
 
-        this.broadcastChanges();
+        pendingTarget = ItemStack.EMPTY;
+        pendingCount = 0;
+        if (player.containerMenu == this) this.broadcastChanges();
         player.getInventory().setChanged();
 
         // Отправка клиенту пакета с результатом
-        NetworkHandler.sendToPlayer(player, new SpinResultPacket(success, chance, rollAngle));
+        NetworkHandler.sendToPlayer(player, new SpinResultPacket(containerId, false, success, pendingChance, pendingAngle));
     }
 
     private void logSuspiciousAction(ServerPlayer player, ItemStack input, double inputVal, ItemStack target, double targetVal) {
@@ -464,15 +547,20 @@ public class UpgraderMenu extends AbstractContainerMenu {
     }
 
     /** Слот ставки, не принимающий предметы из чёрного списка и сам апгрейдер. */
-    private static final class InputSlot extends Slot {
+    private final class InputSlot extends Slot {
 
         private InputSlot(Container container, int slot, int x, int y) {
             super(container, slot, x, y);
         }
 
         @Override
+        public boolean mayPickup(Player player) {
+            return !isLocked();
+        }
+
+        @Override
         public boolean mayPlace(ItemStack stack) {
-            return !ModConfig.isBlacklisted(stack)
+            return !isLocked() && !ModConfig.isBlacklisted(stack)
                     && !stack.is(ModItems.UPGRADER.get());
         }
     }

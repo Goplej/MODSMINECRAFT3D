@@ -35,5 +35,6 @@
   "itemGroup.upgradermod": "Upgrader Mod",
   "sound.upgradermod.spin_start": "Starting upgrade spin",
   "sound.upgradermod.spin_success": "Upgrade successful",
-  "sound.upgradermod.spin_failure": "Upgrade failed"
+  "sound.upgradermod.spin_failure": "Upgrade failed",
+  "gui.upgradermod.spinning": "Spinning…"
 }

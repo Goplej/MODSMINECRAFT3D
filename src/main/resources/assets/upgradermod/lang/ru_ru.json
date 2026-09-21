@@ -35,5 +35,6 @@
   "itemGroup.upgradermod": "Upgrader Mod",
   "sound.upgradermod.spin_start": "Начало прокрутки апгрейдера",
   "sound.upgradermod.spin_success": "Апгрейд успешен",
-  "sound.upgradermod.spin_failure": "Апгрейд провален"
+  "sound.upgradermod.spin_failure": "Апгрейд провален",
+  "gui.upgradermod.spinning": "Крутится…"
 }

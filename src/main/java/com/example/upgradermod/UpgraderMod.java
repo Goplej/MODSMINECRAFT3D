@@ -57,6 +57,9 @@ public class UpgraderMod {
 
         // Регистрация на шине событий Forge
         MinecraftForge.EVENT_BUS.register(this);
+        MinecraftForge.EVENT_BUS.addListener(this::serverTick);
+        MinecraftForge.EVENT_BUS.addListener(this::playerLogout);
+        MinecraftForge.EVENT_BUS.addListener(net.minecraftforge.eventbus.api.EventPriority.LOWEST, this::playerDeath);
 
         LOGGER.info("Upgrader Mod успешно загружен и ожидает commonSetup.");
     }
@@ -66,6 +69,22 @@ public class UpgraderMod {
      *
      * @param event событие общего этапа инициализации
      */
+    private void serverTick(net.minecraftforge.event.TickEvent.ServerTickEvent event) {
+        if (event.phase == net.minecraftforge.event.TickEvent.Phase.END) {
+            com.example.upgradermod.menu.UpgraderMenu.tickPending(event.getServer());
+        }
+    }
+
+    private void playerLogout(net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
+        com.example.upgradermod.menu.UpgraderMenu.settlePending(event.getEntity());
+    }
+
+    private void playerDeath(net.minecraftforge.event.entity.living.LivingDeathEvent event) {
+        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {
+            com.example.upgradermod.menu.UpgraderMenu.settlePending(player);
+        }
+    }
+
     private void commonSetup(final FMLCommonSetupEvent event) {
         event.enqueueWork(() -> {
             // Регистрация пакетов

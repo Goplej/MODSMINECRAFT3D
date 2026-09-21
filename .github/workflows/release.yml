@@ -32,24 +32,42 @@ jobs:
       - name: Build mod
         run: ./gradlew clean build --no-daemon
 
-      - name: Verify JAR contains compiled classes
+      - name: Verify Java 17 mod artifact
+        shell: bash
         run: |
-          jar=$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | head -n 1)
-          test -n "$jar"
-          classes=$(unzip -l "$jar" | awk '/\.class$/ { c++ } END { print c + 0 }')
-          test "$classes" -gt 20
-          echo "Built $jar with $classes classes"
-          echo "JAR_PATH=$jar" >> "$GITHUB_ENV"
+          python3 - <<'PYCODE'
+          import pathlib, struct, zipfile
+          version = next(line.split('=', 1)[1] for line in pathlib.Path('gradle.properties').read_text().splitlines() if line.startswith('mod_version='))
+          jar = pathlib.Path('build/libs') / f'upgradermod-{version}.jar'
+          with zipfile.ZipFile(jar) as z:
+              classes = [n for n in z.namelist() if n.endswith('.class')]
+              assert len(classes) >= 40, f'Only {len(classes)} classes'
+              for name in classes:
+                  data = z.read(name)
+                  assert len(data) > 8 and data[:4] == bytes.fromhex('cafebabe'), name
+                  assert struct.unpack('>H', data[6:8])[0] == 61, name
+              for name in ('SyncStatePacket', 'SetTargetCountPacket', 'ChancePresetPacket'):
+                  assert f'com/example/upgradermod/network/{name}.class' in classes
+              toml = z.read('META-INF/mods.toml').decode()
+              assert 'upgradermod' in toml and 'Popipok' in toml and version in toml
+              z.read('assets/upgradermod/textures/item/upgrader.png')
+              z.read('assets/upgradermod/lang/ru_ru.json')
+          print(f'Verified {jar}: {len(classes)} Java 17 classes')
+          import os
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'JAR_PATH={jar}\n')
+          PYCODE
 
       - name: Create GitHub Release with assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="${GITHUB_REF_NAME#v}"
+          test "$(sed -n 's/^mod_version=//p' gradle.properties)" = "$version"
           cat > /tmp/release-notes.md << 'NOTES'
           Рабочая сборка Upgrader Mod для Minecraft Forge 1.20.1 (Java 17), автор Popipok.
 
-          **Установка:** скопируйте `upgradermod-1.0.0.jar` в папку `mods` клиента и сервера (требуется Forge 47.x). `upgradermod.zip` — архив исходников проекта.
+          **Установка:** скопируйте `upgradermod-VERSION.jar` в папку `mods` клиента и сервера (требуется Forge 47.x). `upgradermod.zip` — архив исходников проекта.
 
           ## Возможности
           - Рулетка апгрейда предметов с компасоподобным индикатором (кольца, деления, стрелка) в тёмной теме
@@ -63,7 +81,7 @@ jobs:
           ## Сборка
           - Скомпилировано ForgeGradle на Temurin Java 17 в GitHub Actions, JAR проверен на наличие реальных классов
           NOTES
-          sed -i 's/^          //' /tmp/release-notes.md
+          sed -i "s/upgradermod-VERSION.jar/upgradermod-${version}.jar/g" /tmp/release-notes.md
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             gh release upload "${GITHUB_REF_NAME}" "$JAR_PATH" upgradermod.zip --clobber
           else

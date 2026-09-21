@@ -23,7 +23,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
  * Сервер присылает сюда рассчитанный шанс через UpdateChancePacket и
  * подтверждённое состояние через SyncStatePacket; клиент не предсказывает
  * результат спина и не считает шанс самостоятельно.
- * Финальная компоновка рассчитана на GUI 256x256.
+ * Финальная компоновка рассчитана на GUI 256x272.
  *
  * @author Popipok
  */
@@ -31,17 +31,16 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
 
     private static final int GUI_WIDTH = 256;
-    private static final int GUI_HEIGHT = 256;
-    private static final long SPIN_DURATION_MS = 2000L;
+    private static final int GUI_HEIGHT = 272;
     private static final long RESULT_DISPLAY_MS = 2000L;
 
     private static final int BACKGROUND_COLOR = 0xFF1A1A2E;
-    private static final int PANEL_COLOR = 0xFF16213E;
-    private static final int FRAME_COLOR = 0xFF533483;
-    private static final int INNER_COMPASS_COLOR = 0xFF0F3460;
-    private static final int ACCENT_COLOR = 0xFFE94560;
-    private static final int ACCENT_HOVER_COLOR = 0xFFFF6B8A;
-    private static final int GOLD_COLOR = 0xFFFFD700;
+    private static final int PANEL_COLOR = 0xFF211B30;
+    private static final int FRAME_COLOR = 0xFF806746;
+    private static final int INNER_COMPASS_COLOR = 0xFF15101F;
+    private static final int ACCENT_COLOR = 0xFFD5AF65;
+    private static final int ACCENT_HOVER_COLOR = 0xFFE8C887;
+    private static final int GOLD_COLOR = 0xFFE8C887;
     private static final int TEXT_COLOR = 0xFFE8E8E8;
     private static final int MUTED_COLOR = 0xFF9A9AB0;
     private static final int DISABLED_COLOR = 0xFF3A3A4A;
@@ -60,7 +59,7 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     private static final int ROW2_Y = 154;
     private static final int ROW2_H = 18;
 
-    private static final int INV_START_Y = 175;
+    private static final int INV_START_Y = 187;
 
     private Button spinButton;
     private Button countMinusButton;
@@ -86,7 +85,6 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     /** Текущий угол стрелки компаса, 0 градусов — вверх. */
     private float arrowAngle;
     private float spinStartAngle;
-    private float targetArrowAngle;
     private long spinStartTime;
     private boolean isSpinning;
 
@@ -152,7 +150,6 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
             return;
         }
         int requested = Mth.clamp(this.menu.getTargetCount() + delta, 1, UpgraderMenu.MAX_TARGET_COUNT);
-        this.menu.setTargetCount(requested);
         NetworkHandler.sendToServer(new SetTargetCountPacket(requested));
     }
 
@@ -168,7 +165,6 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         if (this.isSpinning) {
             return;
         }
-        this.menu.setMultiplier(multiplier);
         NetworkHandler.sendToServer(new SetMultiplierPacket(multiplier));
     }
 
@@ -178,7 +174,6 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         this.hasResult = false;
         this.spinStartTime = System.currentTimeMillis();
         this.spinStartAngle = this.arrowAngle;
-        this.targetArrowAngle = this.arrowAngle;
         updateButtonStates();
     }
 
@@ -194,53 +189,28 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
      * Получает результат броска и фиксирует рассчитанные на сервере шанс и угол.
      * Только этот пакет определяет, что увидит игрок: успех или провал.
      */
-    public void onSpinResult(boolean success, double chance, float rollAngle) {
+    public void onSpinResult(boolean rejected, boolean success, double chance, float rollAngle) {
+        this.isSpinning = false;
+        this.hasResult = !rejected;
         this.lastResult = success;
-        this.hasResult = true;
         this.resultChance = Mth.clamp(chance, 0.0D, 100.0D);
-        this.displayedChance = this.resultChance;
+        if (!rejected) {
+            this.arrowAngle = normalizeAngle(rollAngle);
+            this.displayedChance = this.resultChance;
+        }
         this.resultDisplayUntil = System.currentTimeMillis() + RESULT_DISPLAY_MS;
-
-        this.isSpinning = true;
-        this.spinStartTime = System.currentTimeMillis();
-        this.spinStartAngle = this.arrowAngle;
-        this.targetArrowAngle = rollAngle;
         updateButtonStates();
     }
 
     @Override
     protected void containerTick() {
         super.containerTick();
-
         long now = System.currentTimeMillis();
-
         if (this.isSpinning) {
-            long elapsed = now - this.spinStartTime;
-            float progress = Mth.clamp((float) elapsed / SPIN_DURATION_MS, 0.0F, 1.0F);
-            float easeOut = 1.0F - (float) Math.pow(1.0F - progress, 3.0F);
-
-            if (this.hasResult) {
-                float rotation = 720.0F * easeOut;
-                this.arrowAngle = normalizeAngle(this.spinStartAngle
-                        + rotation
-                        + (this.targetArrowAngle - this.spinStartAngle) * easeOut);
-            } else {
-                // Пока сервер отвечает, стрелка продолжает вращаться без предсказания итога.
-                this.arrowAngle = normalizeAngle(this.spinStartAngle + (elapsed * 0.72F));
-            }
-
-            if (this.hasResult && progress >= 1.0F) {
-                this.arrowAngle = normalizeAngle(this.targetArrowAngle);
-                this.isSpinning = false;
-            } else if (!this.hasResult && elapsed > 10_000L) {
-                // Защита от зависания, если ответ сервера так и не пришёл.
-                this.isSpinning = false;
-            }
+            // No local result prediction or timeout unlock: the server settles after 40 ticks.
+            this.arrowAngle = normalizeAngle(this.spinStartAngle + (now - this.spinStartTime) * 0.72F);
         }
-
-        if (this.hasResult && now >= this.resultDisplayUntil && !this.isSpinning) {
-            this.hasResult = false;
-        }
+        if (this.hasResult && now >= this.resultDisplayUntil) this.hasResult = false;
         updateButtonStates();
     }
 
@@ -282,7 +252,7 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         this.renderBackground(guiGraphics);
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        drawThemedButton(guiGraphics, this.spinButton, Component.translatable("gui.upgradermod.spin"), true, mouseX, mouseY);
+        drawThemedButton(guiGraphics, this.spinButton, Component.translatable(this.isSpinning ? "gui.upgradermod.spinning" : "gui.upgradermod.spin"), true, mouseX, mouseY);
         drawThemedButton(guiGraphics, this.countMinusButton, Component.literal("-"), false, mouseX, mouseY);
         drawThemedButton(guiGraphics, this.countPlusButton, Component.literal("+"), false, mouseX, mouseY);
         drawThemedButton(guiGraphics, this.preset30Button, Component.literal("30%"), false, mouseX, mouseY);
@@ -323,7 +293,7 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
             }
         }
         for (int col = 0; col < 9; ++col) {
-            drawSlot(guiGraphics, x + 47 + col * 18, y + 232);
+            drawSlot(guiGraphics, x + 47 + col * 18, y + 244);
         }
 
         drawCompass(guiGraphics, x + COMPASS_X, y + COMPASS_Y);
@@ -345,12 +315,19 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
      * Компасоподобный индикатор рулетки: концентрические кольца, деления
      * и вращающаяся стрелка. Без букв и обозначений сторон света.
      */
+    private int chanceSectorColor() {
+        return this.displayedChance < 30.0 ? 0xFF9B354A
+                : this.displayedChance < 60.0 ? 0xFFAD882D : 0xFF287B52;
+    }
+
     private void drawCompass(GuiGraphics guiGraphics, int centerX, int centerY) {
         for (int dx = -38; dx <= 38; dx++) {
             for (int dy = -38; dy <= 38; dy++) {
                 if (dx * dx + dy * dy <= 38 * 38) {
                     guiGraphics.fill(centerX + dx, centerY + dy,
-                            centerX + dx + 1, centerY + dy + 1, INNER_COMPASS_COLOR);
+                            centerX + dx + 1, centerY + dy + 1,
+                            (Math.toDegrees(Math.atan2(dx, -dy)) + 360.0) % 360.0 < this.displayedChance * 3.6
+                                    ? chanceSectorColor() : INNER_COMPASS_COLOR);
                 }
             }
         }
@@ -446,6 +423,11 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
                 Component.translatable("gui.upgradermod.target_count", this.menu.getTargetCount()),
                 TARGET_SLOT_X + 8, 60, GOLD_COLOR);
 
+        // Percentage stays inside the ring; result text is below it.
+        guiGraphics.fill(107, 80, 149, 91, INNER_COMPASS_COLOR);
+        guiGraphics.drawCenteredString(this.font,
+                ChanceCalculator.formatChance(this.displayedChance), 128, 81, TEXT_COLOR);
+
         // Шанс и его подпись.
         String chanceText;
         int chanceColor;
@@ -477,6 +459,7 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (this.isSpinning) return true;
         int x = this.leftPos;
         int y = this.topPos;
         // Клик по слоту цели открывает каталог предметов.
