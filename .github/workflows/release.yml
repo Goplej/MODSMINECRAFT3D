@@ -1,0 +1,74 @@
+name: Release Upgrader Mod
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Build mod
+        run: ./gradlew clean build --no-daemon
+
+      - name: Verify JAR contains compiled classes
+        run: |
+          jar=$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | head -n 1)
+          test -n "$jar"
+          classes=$(unzip -l "$jar" | awk '/\.class$/ { c++ } END { print c + 0 }')
+          test "$classes" -gt 20
+          echo "Built $jar with $classes classes"
+          echo "JAR_PATH=$jar" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cat > /tmp/release-notes.md << 'NOTES'
+          Рабочая сборка Upgrader Mod для Minecraft Forge 1.20.1 (Java 17), автор Popipok.
+
+          **Установка:** скопируйте `upgradermod-1.0.0.jar` в папку `mods` клиента и сервера (требуется Forge 47.x). `upgradermod.zip` — архив исходников проекта.
+
+          ## Возможности
+          - Рулетка апгрейда предметов с компасоподобным индикатором (кольца, деления, стрелка) в тёмной теме
+          - Кнопки: КРУТИТЬ, количество цели -/+, пресеты шанса 30%/50%/80%, множители награды x1/x2/x4/x8/x10
+          - Количество цели входит в стоимость и шанс; награда = цель x количество x множитель и корректно разбивается на несколько ItemStack
+          - Пресеты шанса подбирают количество цели на сервере, подтверждённое значение синхронизируется клиенту
+          - Каталог предметов с вертикальной прокруткой (вверх/вниз и колёсико), поиском и blacklist-фильтрацией
+          - Постоянный blacklist: bedrock, barrier, апгрейдер и служебные/читерские предметы — не попадают в каталог, input slot, ставку и цель
+          - Все расчёты шанса и результата спина выполняются только на сервере; клиент не предсказывает итог, поддельные пакеты отклоняются
+
+          ## Сборка
+          - Скомпилировано ForgeGradle на Temurin Java 17 в GitHub Actions, JAR проверен на наличие реальных классов
+          NOTES
+          sed -i 's/^          //' /tmp/release-notes.md
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "$JAR_PATH" upgradermod.zip --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              "$JAR_PATH" upgradermod.zip \
+              --title "Upgrader Mod ${version} — Forge 1.20.1" \
+              --notes-file /tmp/release-notes.md
+          fi
