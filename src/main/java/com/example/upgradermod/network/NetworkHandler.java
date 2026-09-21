@@ -10,13 +10,14 @@ import net.minecraftforge.network.simple.SimpleChannel;
 
 /**
  * Обработчик сетевых пакетов мода Upgrader Mod.
- * Использует SimpleChannel протокол "2".
+ * Использует SimpleChannel протокол "3".
  *
  * @author Popipok
  */
 public class NetworkHandler {
 
-    private static final String PROTOCOL_VERSION = "2";
+    // Формат SpinResultPacket изменился (добавлен код причины reject) — версия 3.
+    private static final String PROTOCOL_VERSION = "3";
     private static int packetId = 0;
 
     /**
