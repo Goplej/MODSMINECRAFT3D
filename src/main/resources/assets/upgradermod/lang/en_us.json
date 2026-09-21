@@ -19,5 +19,8 @@
   "gui.upgradermod.rule_downgrade": "Input exceeds downgrade limit",
   "key.categories.upgradermod": "Upgrader Mod",
   "key.upgradermod.open": "Open Upgrader",
-  "itemGroup.upgradermod": "Upgrader Mod"
+  "itemGroup.upgradermod": "Upgrader Mod",
+  "sound.upgradermod.spin_start": "Starting upgrade spin",
+  "sound.upgradermod.spin_success": "Upgrade successful",
+  "sound.upgradermod.spin_failure": "Upgrade failed"
 }

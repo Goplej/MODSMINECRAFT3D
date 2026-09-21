@@ -6,9 +6,11 @@ import com.example.upgradermod.logic.ValueCalculator;
 import com.example.upgradermod.network.NetworkHandler;
 import com.example.upgradermod.network.SpinResultPacket;
 import com.example.upgradermod.registry.ModMenus;
+import com.example.upgradermod.registry.ModSounds;
 import com.mojang.logging.LogUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
@@ -54,7 +56,7 @@ public class UpgraderMenu extends AbstractContainerMenu {
         this.playerInventory = playerInventory;
 
         // Слот 0: входной слот (ставка) x=50, y=40
-        this.addSlot(new Slot(this.inputContainer, 0, 50, 40));
+        this.addSlot(new InputSlot(this.inputContainer, 0, 50, 40));
 
         // Слоты 1-27: основной инвентарь игрока (3 ряда по 9 слотов)
         for (int row = 0; row < 3; ++row) {
@@ -131,24 +133,29 @@ public class UpgraderMenu extends AbstractContainerMenu {
      * @param targetStack предмет цели
      */
     public void setTargetStack(ItemStack targetStack) {
-        this.targetStack = targetStack != null ? targetStack.copy() : ItemStack.EMPTY;
+        if (targetStack == null || targetStack.isEmpty() || ModConfig.isBlacklisted(targetStack)) {
+            this.targetStack = ItemStack.EMPTY;
+        } else {
+            this.targetStack = targetStack.copy();
+            this.targetStack.setCount(1);
+        }
         broadcastChanges();
     }
 
     /**
-     * @return текущий множитель ставки (1, 2, 4 или 8)
+     * @return текущий множитель ставки (1, 2, 4, 8 или 10)
      */
     public int getMultiplier() {
         return multiplier;
     }
 
     /**
-     * Устанавливает множитель ставки. Допустимые значения: 1, 2, 4, 8.
+     * Устанавливает множитель ставки. Допустимые значения: 1, 2, 4, 8, 10.
      *
      * @param multiplier множитель
      */
     public void setMultiplier(int multiplier) {
-        if (multiplier == 1 || multiplier == 2 || multiplier == 4 || multiplier == 8) {
+        if (multiplier == 1 || multiplier == 2 || multiplier == 4 || multiplier == 8 || multiplier == 10) {
             this.multiplier = multiplier;
             broadcastChanges();
         }
@@ -173,6 +180,11 @@ public class UpgraderMenu extends AbstractContainerMenu {
 
         // Правило 1: input.isEmpty() || target.isEmpty() → cancel
         if (input.isEmpty() || targetStack.isEmpty()) {
+            return;
+        }
+
+        // Чёрный список проверяется на сервере повторно, даже если клиент изменён.
+        if (ModConfig.isBlacklisted(input) || ModConfig.isBlacklisted(targetStack)) {
             return;
         }
 
@@ -246,6 +258,12 @@ public class UpgraderMenu extends AbstractContainerMenu {
             }
         }
 
+        player.playNotifySound(
+                success ? ModSounds.SPIN_SUCCESS.get() : ModSounds.SPIN_FAILURE.get(),
+                SoundSource.PLAYERS,
+                0.85F,
+                success ? 1.0F : 0.8F);
+
         this.broadcastChanges();
         player.getInventory().setChanged();
 
@@ -274,6 +292,19 @@ public class UpgraderMenu extends AbstractContainerMenu {
             }
         } catch (IOException e) {
             LOGGER.error("Не удалось записать в logs/upgradermod_suspicious.log: {}", e.getMessage(), e);
+        }
+    }
+
+    /** Слот ставки, не принимающий предметы из чёрного списка. */
+    private static final class InputSlot extends Slot {
+
+        private InputSlot(Container container, int slot, int x, int y) {
+            super(container, slot, x, y);
+        }
+
+        @Override
+        public boolean mayPlace(ItemStack stack) {
+            return !ModConfig.isBlacklisted(stack);
         }
     }
 }

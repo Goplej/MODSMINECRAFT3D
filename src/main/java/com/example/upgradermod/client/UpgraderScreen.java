@@ -3,10 +3,12 @@ package com.example.upgradermod.client;
 import com.example.upgradermod.logic.ChanceCalculator;
 import com.example.upgradermod.logic.ValueCalculator;
 import com.example.upgradermod.menu.UpgraderMenu;
+import com.example.upgradermod.registry.ModSounds;
 import com.example.upgradermod.network.NetworkHandler;
 import com.example.upgradermod.network.SetMultiplierPacket;
 import com.example.upgradermod.network.SpinPacket;
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -19,7 +21,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 
 /**
  * Графический интерфейс апгрейдера (рулетки).
- * Размер 256x220, содержит слот ставки, слот цели, колесо рулетки, кнопки управления.
+ * Размер 280x220, содержит слот ставки, слот цели, колесо рулетки, кнопки управления.
  *
  * @author Popipok
  */
@@ -27,7 +29,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
 
     private Button spinButton;
-    private Button btnX1, btnX2, btnX4, btnX8;
+    private Button btnX1, btnX2, btnX4, btnX8, btnX10;
 
     // Параметры анимации прокрутки
     private boolean isSpinning = false;
@@ -46,7 +48,7 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
      */
     public UpgraderScreen(UpgraderMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-        this.imageWidth = 256;
+        this.imageWidth = 280;
         this.imageHeight = 220;
     }
 
@@ -57,21 +59,26 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         int x = this.leftPos;
         int y = this.topPos;
 
-        // Кнопка "КРУТИТЬ" (30, 145) размером 140x20
+        // Кнопка "КРУТИТЬ" (22, 145) размером 124x20
         spinButton = this.addRenderableWidget(
                 Button.builder(Component.translatable("gui.upgradermod.spin"), btn -> {
                     if (!isSpinning) {
+                        Minecraft mc = Minecraft.getInstance();
+                        if (mc.player != null) {
+                            mc.player.playSound(ModSounds.SPIN_START.get(), 0.65F, 1.15F);
+                        }
                         NetworkHandler.sendToServer(new SpinPacket());
                     }
-                }).bounds(x + 30, y + 145, 140, 20).build()
+                }).bounds(x + 22, y + 145, 124, 20).build()
         );
 
-        // Кнопки множителей x1, x2, x4, x8
+        // Кнопки множителей x1, x2, x4, x8, x10
         int multY = y + 145;
-        btnX1 = this.addRenderableWidget(Button.builder(Component.literal("x1"), b -> setMultiplier(1)).bounds(x + 175, multY, 18, 20).build());
-        btnX2 = this.addRenderableWidget(Button.builder(Component.literal("x2"), b -> setMultiplier(2)).bounds(x + 194, multY, 18, 20).build());
-        btnX4 = this.addRenderableWidget(Button.builder(Component.literal("x4"), b -> setMultiplier(4)).bounds(x + 213, multY, 18, 20).build());
-        btnX8 = this.addRenderableWidget(Button.builder(Component.literal("x8"), b -> setMultiplier(8)).bounds(x + 232, multY, 18, 20).build());
+        btnX1 = this.addRenderableWidget(Button.builder(Component.literal("x1"), b -> setMultiplier(1)).bounds(x + 150, multY, 22, 20).build());
+        btnX2 = this.addRenderableWidget(Button.builder(Component.literal("x2"), b -> setMultiplier(2)).bounds(x + 174, multY, 22, 20).build());
+        btnX4 = this.addRenderableWidget(Button.builder(Component.literal("x4"), b -> setMultiplier(4)).bounds(x + 198, multY, 22, 20).build());
+        btnX8 = this.addRenderableWidget(Button.builder(Component.literal("x8"), b -> setMultiplier(8)).bounds(x + 222, multY, 22, 20).build());
+        btnX10 = this.addRenderableWidget(Button.builder(Component.literal("x10"), b -> setMultiplier(10)).bounds(x + 246, multY, 28, 20).build());
     }
 
     private void setMultiplier(int mult) {

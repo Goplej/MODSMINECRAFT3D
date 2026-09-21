@@ -5,6 +5,7 @@ import com.example.upgradermod.logic.ValueProviderRegistry;
 import com.example.upgradermod.network.NetworkHandler;
 import com.example.upgradermod.registry.ModItems;
 import com.example.upgradermod.registry.ModMenus;
+import com.example.upgradermod.registry.ModSounds;
 import com.mojang.logging.LogUtils;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraftforge.common.MinecraftForge;
@@ -48,6 +49,7 @@ public class UpgraderMod {
         // Регистрация отложенных реестров предметов и меню
         ModItems.register(modEventBus);
         ModMenus.register(modEventBus);
+        ModSounds.register(modEventBus);
 
         // Регистрация слушателей жизненного цикла
         modEventBus.addListener(this::commonSetup);

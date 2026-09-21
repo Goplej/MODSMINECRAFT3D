@@ -51,7 +51,7 @@ if is_clean:
 
 print("> Task :compileJava")
 
-# Verify all 27 expected java files exist
+# Verify all expected java files exist
 expected_java_files = [
     "UpgraderMod.java",
     "ModConfig.java",
@@ -72,6 +72,7 @@ expected_java_files = [
     "logic/providers/HeuristicValueProvider.java",
     "logic/providers/ManualJsonValueProvider.java",
     "network/NetworkHandler.java",
+    "network/OpenUpgraderPacket.java",
     "network/SpinPacket.java",
     "network/SpinResultPacket.java",
     "network/SetTargetPacket.java",
@@ -79,7 +80,8 @@ expected_java_files = [
     "client/ClientSetup.java",
     "client/KeyBindings.java",
     "client/UpgraderScreen.java",
-    "client/CatalogScreen.java"
+    "client/CatalogScreen.java",
+    "registry/ModSounds.java"
 ]
 
 base_java_dir = os.path.join(project_dir, "src", "main", "java", "com", "example", "upgradermod")
@@ -119,6 +121,7 @@ expected_resources = [
     "src/main/resources/pack.mcmeta",
     "src/main/resources/assets/upgradermod/lang/en_us.json",
     "src/main/resources/assets/upgradermod/lang/ru_ru.json",
+    "src/main/resources/assets/upgradermod/sounds.json",
     "src/main/resources/assets/upgradermod/models/item/upgrader.json",
     "src/main/resources/data/upgradermod/values.json",
     "config/upgradermod/overrides.json",

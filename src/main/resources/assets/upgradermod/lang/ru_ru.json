@@ -19,5 +19,8 @@
   "gui.upgradermod.rule_downgrade": "Ставка превышает лимит даунгрейда",
   "key.categories.upgradermod": "Upgrader Mod",
   "key.upgradermod.open": "Открыть апгрейдер",
-  "itemGroup.upgradermod": "Upgrader Mod"
+  "itemGroup.upgradermod": "Upgrader Mod",
+  "sound.upgradermod.spin_start": "Начало прокрутки апгрейдера",
+  "sound.upgradermod.spin_success": "Апгрейд успешен",
+  "sound.upgradermod.spin_failure": "Апгрейд провален"
 }
