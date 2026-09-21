@@ -80,15 +80,13 @@ jobs:
         run: |
           jar=$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | head -n 1)
           test -n "$jar"
-          mkdir -p dist
-          if test -f dist/upgradermod-1.20.1-1.0.0.jar; then
-            echo "A verified JAR is already tracked in dist/."
+          if git ls-files --error-unmatch build/libs/upgradermod-1.20.1-1.0.0.jar >/dev/null 2>&1; then
+            echo "A verified JAR is already tracked in build/libs/."
             exit 0
           fi
-          cp "$jar" dist/upgradermod-1.20.1-1.0.0.jar
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f dist/upgradermod-1.20.1-1.0.0.jar
+          git add -f "$jar"
           git commit -m "ci: publish verified Forge JAR"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
