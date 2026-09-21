@@ -22,7 +22,7 @@ minecraft {
 
     runs {
         configureEach {
-            workingDir project.file('run')
+            workingDirectory project.file('run')
 
             property 'forge.logging.markers', 'REGISTRIES'
             property 'forge.logging.console.level', 'debug'
@@ -44,7 +44,7 @@ minecraft {
         }
 
         data {
-            workingDir project.file('run-data')
+            workingDirectory project.file('run-data')
             args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
         }
     }
