@@ -58,6 +58,13 @@ public class NetworkHandler {
                 .consumerMainThread(SpinResultPacket::handle)
                 .add();
 
+        // S->C: Актуальный шанс открытого меню
+        CHANNEL.messageBuilder(UpdateChancePacket.class, nextId(), NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(UpdateChancePacket::encode)
+                .decoder(UpdateChancePacket::decode)
+                .consumerMainThread(UpdateChancePacket::handle)
+                .add();
+
         // C->S: Установка целевого предмета
         CHANNEL.messageBuilder(SetTargetPacket.class, nextId(), NetworkDirection.PLAY_TO_SERVER)
                 .encoder(SetTargetPacket::encode)

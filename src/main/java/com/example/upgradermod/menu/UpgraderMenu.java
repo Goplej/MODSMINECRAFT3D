@@ -44,6 +44,7 @@ public class UpgraderMenu extends AbstractContainerMenu {
     private final Inventory playerInventory;
     private ItemStack targetStack = ItemStack.EMPTY;
     private int multiplier = 1;
+    private double lastSentChance = Double.NaN;
 
     /**
      * Конструктор меню апгрейдера.
@@ -55,8 +56,8 @@ public class UpgraderMenu extends AbstractContainerMenu {
         super(ModMenus.UPGRADER_MENU.get(), containerId);
         this.playerInventory = playerInventory;
 
-        // Слот 0: входной слот (ставка) x=50, y=40
-        this.addSlot(new InputSlot(this.inputContainer, 0, 50, 40));
+        // Слот 0: входной слот (ставка) x=40, y=45
+        this.addSlot(new InputSlot(this.inputContainer, 0, 40, 45));
 
         // Слоты 1-27: основной инвентарь игрока (3 ряда по 9 слотов)
         for (int row = 0; row < 3; ++row) {
@@ -74,6 +75,30 @@ public class UpgraderMenu extends AbstractContainerMenu {
     @Override
     public boolean stillValid(Player player) {
         return true;
+    }
+
+    /**
+     * Синхронизирует шанс только при его изменении. Это держит расчёт на сервере
+     * и не создаёт сетевой поток из повторяющихся одинаковых значений.
+     */
+    @Override
+    public void broadcastChanges() {
+        super.broadcastChanges();
+
+        if (this.playerInventory.player instanceof ServerPlayer serverPlayer) {
+            double chance = calculateChance();
+            if (Double.doubleToLongBits(chance) != Double.doubleToLongBits(this.lastSentChance)) {
+                this.lastSentChance = chance;
+                NetworkHandler.sendToPlayer(serverPlayer, new com.example.upgradermod.network.UpdateChancePacket(chance));
+            }
+        }
+    }
+
+    private double calculateChance() {
+        return ChanceCalculator.calculateChance(
+                ValueCalculator.getItemStackValue(getInputStack()),
+                ValueCalculator.getItemStackValue(this.targetStack),
+                this.multiplier);
     }
 
     @Override

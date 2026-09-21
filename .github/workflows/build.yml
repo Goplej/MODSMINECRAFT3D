@@ -78,15 +78,21 @@ jobs:
         if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/arena/')
         shell: bash
         run: |
-          jar=$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | head -n 1)
-          test -n "$jar"
-          if git ls-files --error-unmatch build/libs/upgradermod-1.20.1-1.0.0.jar >/dev/null 2>&1; then
-            echo "A verified JAR is already tracked in build/libs/."
+          changed_files=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA")
+          if ! printf '%s\n' "$changed_files" | grep -Eq '^(src/|build.gradle$|gradle.properties$|settings.gradle$|gradle/)'; then
+            echo "This commit does not change sources or build inputs; keeping the verified JAR."
             exit 0
           fi
+
+          jar=$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | head -n 1)
+          test -n "$jar"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f "$jar"
+          if git diff --cached --quiet; then
+            echo "The compiled JAR did not change."
+            exit 0
+          fi
           git commit -m "ci: publish verified Forge JAR"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
