@@ -30,10 +30,6 @@ public class ValueCalculator {
         }
 
         for (ValueProvider provider : ValueProviderRegistry.getProviders()) {
-            // Не вызываем RecipeValueProvider внутри себя если это приведет к рекурсии
-            if (provider instanceof com.example.upgradermod.logic.providers.RecipeValueProvider) {
-                continue;
-            }
             try {
                 double val = provider.getValue(stack);
                 if (val > 0) {
@@ -41,20 +37,6 @@ public class ValueCalculator {
                 }
             } catch (Throwable t) {
                 LOGGER.debug("Provider {} threw in getSingleItemValue: {}", provider.getName(), t.getMessage());
-            }
-        }
-
-        // Если другие провайдеры не дали результат, пробуем RecipeValueProvider
-        for (ValueProvider provider : ValueProviderRegistry.getProviders()) {
-            if (provider instanceof com.example.upgradermod.logic.providers.RecipeValueProvider) {
-                try {
-                    double val = provider.getValue(stack);
-                    if (val > 0) {
-                        return Math.min(ModConfig.getRecipeMaxPrice(), val);
-                    }
-                } catch (Throwable t) {
-                    LOGGER.debug("RecipeValueProvider threw in getSingleItemValue: {}", t.getMessage());
-                }
             }
         }
 

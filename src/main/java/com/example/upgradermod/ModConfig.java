@@ -63,9 +63,7 @@ public class ModConfig {
         public final ForgeConfigSpec.IntValue enchantWeightLegendary;
         public final ForgeConfigSpec.IntValue attributeWeight;
 
-        public final ForgeConfigSpec.IntValue recipeMaxDepth;
         public final ForgeConfigSpec.LongValue recipeMaxPrice;
-        public final ForgeConfigSpec.ConfigValue<List<? extends Double>> recipeDepthMultipliers;
 
         public final ForgeConfigSpec.BooleanValue taxEnabled;
         public final ForgeConfigSpec.ConfigValue<String> taxItem;
@@ -95,15 +93,9 @@ public class ModConfig {
                     .defineInRange("attributeWeight", 50, 0, 1000000);
             builder.pop();
 
-            builder.comment("Параметры рекурсивного расчёта ценности по рецептам").push("recipes");
-            recipeMaxDepth = builder.comment("Максимальная глубина рекурсии при разборе рецепта")
-                    .defineInRange("recipeMaxDepth", 10, 1, 50);
-            recipeMaxPrice = builder.comment("Максимальная цена предмета")
+            builder.comment("Ограничение максимальной ценности предмета (защита от абузов)").push("recipes");
+            recipeMaxPrice = builder.comment("Максимальная допустимая цена предмета")
                     .defineInRange("recipeMaxPrice", 10000000000000L, 1L, Long.MAX_VALUE);
-            recipeDepthMultipliers = builder.comment("Множители цены в зависимости от глубины рецепта")
-                    .defineListAllowEmpty(List.of("recipeDepthMultipliers"),
-                            () -> Arrays.asList(1.0, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0),
-                            o -> o instanceof Double);
             builder.pop();
 
             builder.comment("Параметры комиссии/налога за прокрутку").push("tax");
@@ -185,24 +177,10 @@ public class ModConfig {
     }
 
     /**
-     * @return Максимальная глубина рекурсии рецептов
-     */
-    public static int getRecipeMaxDepth() {
-        return COMMON.recipeMaxDepth.get();
-    }
-
-    /**
      * @return Максимальная допустимая цена предмета
      */
     public static long getRecipeMaxPrice() {
         return COMMON.recipeMaxPrice.get();
-    }
-
-    /**
-     * @return Список множителей глубины рецепта
-     */
-    public static List<? extends Double> getRecipeDepthMultipliers() {
-        return COMMON.recipeDepthMultipliers.get();
     }
 
     /**
