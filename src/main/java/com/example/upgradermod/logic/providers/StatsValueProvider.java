@@ -72,7 +72,7 @@ public class StatsValueProvider implements ValueProvider {
             double armor = 0.0;
             double toughness = 0.0;
             for (EquipmentSlot slot : EquipmentSlot.values()) {
-                if (slot.getType() != EquipmentSlot.Type.HUMANOID_ARMOR) {
+                if (slot.getType() != EquipmentSlot.Type.ARMOR) {
                     continue;
                 }
                 for (Map.Entry<Attribute, AttributeModifier> entry : stack.getAttributeModifiers(slot).entries()) {
