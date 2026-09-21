@@ -1,0 +1,23 @@
+{
+  "item.upgradermod.upgrader": "Upgrader",
+  "gui.upgradermod.title": "ITEM UPGRADER",
+  "gui.upgradermod.spin": "SPIN",
+  "gui.upgradermod.chance": "Chance: %s",
+  "gui.upgradermod.input_value": "Input Value: %s",
+  "gui.upgradermod.target_value": "Target Value: %s",
+  "gui.upgradermod.ratio": "1 in %s",
+  "gui.upgradermod.catalog": "Item Catalog",
+  "gui.upgradermod.search": "Search items...",
+  "gui.upgradermod.prev": "< Prev",
+  "gui.upgradermod.next": "Next >",
+  "gui.upgradermod.page": "Page %d/%d",
+  "gui.upgradermod.win": "SUCCESS!",
+  "gui.upgradermod.loss": "FAILED!",
+  "gui.upgradermod.rule_empty": "Place input and select target",
+  "gui.upgradermod.rule_same": "Items cannot be identical",
+  "gui.upgradermod.rule_creative": "Endgame targets restricted in creative",
+  "gui.upgradermod.rule_downgrade": "Input exceeds downgrade limit",
+  "key.categories.upgradermod": "Upgrader Mod",
+  "key.upgradermod.open": "Open Upgrader",
+  "itemGroup.upgradermod": "Upgrader Mod"
+}

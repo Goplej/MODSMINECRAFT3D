@@ -1,0 +1,23 @@
+{
+  "item.upgradermod.upgrader": "Апгрейдер",
+  "gui.upgradermod.title": "АПГРЕЙД ПРЕДМЕТОВ",
+  "gui.upgradermod.spin": "КРУТИТЬ",
+  "gui.upgradermod.chance": "Шанс: %s",
+  "gui.upgradermod.input_value": "Ставка: %s",
+  "gui.upgradermod.target_value": "Цель: %s",
+  "gui.upgradermod.ratio": "1 к %s",
+  "gui.upgradermod.catalog": "Каталог предметов",
+  "gui.upgradermod.search": "Поиск предметов...",
+  "gui.upgradermod.prev": "< Пред",
+  "gui.upgradermod.next": "След >",
+  "gui.upgradermod.page": "Стр. %d/%d",
+  "gui.upgradermod.win": "УСПЕХ!",
+  "gui.upgradermod.loss": "ПРОВАЛ!",
+  "gui.upgradermod.rule_empty": "Положите ставку и выберите цель",
+  "gui.upgradermod.rule_same": "Предметы не должны быть одинаковыми",
+  "gui.upgradermod.rule_creative": "Эндгейм цели запрещены в креативе",
+  "gui.upgradermod.rule_downgrade": "Ставка превышает лимит даунгрейда",
+  "key.categories.upgradermod": "Upgrader Mod",
+  "key.upgradermod.open": "Открыть апгрейдер",
+  "itemGroup.upgradermod": "Upgrader Mod"
+}
