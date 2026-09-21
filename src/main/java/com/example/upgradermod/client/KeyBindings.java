@@ -1,12 +1,12 @@
 package com.example.upgradermod.client;
 
 import com.example.upgradermod.UpgraderMod;
-import com.example.upgradermod.menu.UpgraderMenu;
+import com.example.upgradermod.network.NetworkHandler;
+import com.example.upgradermod.network.OpenUpgraderPacket;
 import com.example.upgradermod.registry.ModItems;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
@@ -57,11 +57,8 @@ public class KeyBindings {
                 }
 
                 if (hasUpgrader) {
-                    mc.setScreen(new UpgraderScreen(
-                            new UpgraderMenu(0, mc.player.getInventory()),
-                            mc.player.getInventory(),
-                            Component.translatable("gui.upgradermod.title")
-                    ));
+                    // Сервер создаёт настоящий контейнер и проверяет наличие предмета повторно.
+                    NetworkHandler.sendToServer(new OpenUpgraderPacket());
                 }
             }
         }

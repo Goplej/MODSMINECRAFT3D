@@ -1,6 +1,9 @@
 package com.example.upgradermod;
 
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.common.ForgeConfigSpec;
+import net.minecraftforge.registries.ForgeRegistries;
 import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.Arrays;
@@ -46,6 +49,7 @@ public class ModConfig {
         public final ForgeConfigSpec.BooleanValue allowCreativeEndgame;
         public final ForgeConfigSpec.LongValue logThreshold;
         public final ForgeConfigSpec.DoubleValue maxDowngradeRatio;
+        public final ForgeConfigSpec.ConfigValue<List<? extends String>> blacklistItems;
 
         public Common(ForgeConfigSpec.Builder builder) {
             builder.comment("Настройки шансов рулетки апгрейдера").push("chances");
@@ -93,6 +97,21 @@ public class ModConfig {
                     .defineInRange("logThreshold", 1000000000L, 0L, Long.MAX_VALUE);
             maxDowngradeRatio = builder.comment("Максимальное соотношение ставки к цели при даунгрейде")
                     .defineInRange("maxDowngradeRatio", 100.0, 1.0, 1000000.0);
+            blacklistItems = builder.comment(
+                            "Предметы, запрещённые в ставке, цели и каталоге (полные registry ID через запятую)")
+                    .defineListAllowEmpty(List.of("blacklistItems"),
+                            Arrays.asList(
+                                    "minecraft:barrier",
+                                    "minecraft:command_block",
+                                    "minecraft:chain_command_block",
+                                    "minecraft:repeating_command_block",
+                                    "minecraft:structure_block",
+                                    "minecraft:structure_void",
+                                    "minecraft:jigsaw",
+                                    "minecraft:debug_stick",
+                                    "minecraft:light"),
+                            value -> value instanceof String
+                                    && ResourceLocation.tryParse((String) value) != null);
             builder.pop();
         }
     }
@@ -200,5 +219,46 @@ public class ModConfig {
      */
     public static double getMaxDowngradeRatio() {
         return COMMON.maxDowngradeRatio.get();
+    }
+
+    /**
+     * Проверяет, запрещён ли предмет настройкой blacklistItems.
+     *
+     * @param stack предмет для проверки
+     * @return true, если предмет отсутствует в разрешённом пуле апгрейдера
+     */
+    public static boolean isBlacklisted(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+
+        ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
+        return id != null && isBlacklisted(id);
+    }
+
+    /**
+     * Проверяет registry ID по списку из upgradermod-common.toml.
+     * Сравнение нечувствительно к регистру и пробелам вокруг ID.
+     *
+     * @param id registry ID предмета
+     * @return true, если ID есть в чёрном списке
+     */
+    public static boolean isBlacklisted(ResourceLocation id) {
+        if (id == null) {
+            return false;
+        }
+
+        String idString = id.toString();
+        return COMMON.blacklistItems.get().stream()
+                .filter(value -> value != null)
+                .map(value -> value.trim())
+                .anyMatch(value -> value.equalsIgnoreCase(idString));
+    }
+
+    /**
+     * @return список ID предметов, запрещённых для рулетки
+     */
+    public static List<? extends String> getBlacklistItems() {
+        return COMMON.blacklistItems.get();
     }
 }

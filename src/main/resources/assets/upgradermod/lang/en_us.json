@@ -5,6 +5,15 @@
   "gui.upgradermod.chance": "Chance: %s",
   "gui.upgradermod.input_value": "Input Value: %s",
   "gui.upgradermod.target_value": "Target Value: %s",
+  "gui.upgradermod.input_hint_1": "Choose input",
+  "gui.upgradermod.input_hint_2": "Drag from inventory",
+  "gui.upgradermod.target_hint_1": "Choose target",
+  "gui.upgradermod.target_hint_2": "Click for catalog",
+  "gui.upgradermod.chance_label": "CHANCE",
+  "gui.upgradermod.result_success": "SUCCESS %s",
+  "gui.upgradermod.result_failure": "FAILED",
+  "gui.upgradermod.tooltip_value": "Value: %s",
+  "gui.upgradermod.tooltip_chance": "Chance: %s",
   "gui.upgradermod.ratio": "1 in %s",
   "gui.upgradermod.catalog": "Item Catalog",
   "gui.upgradermod.search": "Search items...",
@@ -19,5 +28,8 @@
   "gui.upgradermod.rule_downgrade": "Input exceeds downgrade limit",
   "key.categories.upgradermod": "Upgrader Mod",
   "key.upgradermod.open": "Open Upgrader",
-  "itemGroup.upgradermod": "Upgrader Mod"
+  "itemGroup.upgradermod": "Upgrader Mod",
+  "sound.upgradermod.spin_start": "Starting upgrade spin",
+  "sound.upgradermod.spin_success": "Upgrade successful",
+  "sound.upgradermod.spin_failure": "Upgrade failed"
 }

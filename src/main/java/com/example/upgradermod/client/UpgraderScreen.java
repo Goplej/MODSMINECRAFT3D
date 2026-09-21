@@ -6,107 +6,227 @@ import com.example.upgradermod.menu.UpgraderMenu;
 import com.example.upgradermod.network.NetworkHandler;
 import com.example.upgradermod.network.SetMultiplierPacket;
 import com.example.upgradermod.network.SpinPacket;
-import com.mojang.blaze3d.systems.RenderSystem;
+import com.example.upgradermod.registry.ModSounds;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
+import java.util.Locale;
+
 /**
- * Графический интерфейс апгрейдера (рулетки).
- * Размер 256x220, содержит слот ставки, слот цели, колесо рулетки, кнопки управления.
+ * Графический интерфейс апгрейдера с тёмной темой, компасом и анимацией открытия.
+ * Сервер присылает сюда рассчитанный шанс через UpdateChancePacket.
+ * Финальная компоновка рассчитана на GUI 256x220.
  *
  * @author Popipok
  */
 @OnlyIn(Dist.CLIENT)
 public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
 
+    private static final int GUI_WIDTH = 256;
+    private static final int GUI_HEIGHT = 220;
+    private static final long SPIN_DURATION_MS = 2000L;
+    private static final long RESULT_DISPLAY_MS = 2000L;
+
+    private static final int BACKGROUND_COLOR = 0xFF1A1A2E;
+    private static final int PANEL_COLOR = 0xFF16213E;
+    private static final int FRAME_COLOR = 0xFF533483;
+    private static final int INNER_COMPASS_COLOR = 0xFF0F3460;
+    private static final int ACCENT_COLOR = 0xFFE94560;
+    private static final int GOLD_COLOR = 0xFFFFD700;
+    private static final int TEXT_COLOR = 0xFFE8E8E8;
+    private static final int MUTED_COLOR = 0xFF888888;
+
     private Button spinButton;
-    private Button btnX1, btnX2, btnX4, btnX8;
+    private Button btnX1;
+    private Button btnX2;
+    private Button btnX4;
+    private Button btnX8;
 
-    // Параметры анимации прокрутки
-    private boolean isSpinning = false;
-    private long spinStartTime = 0;
-    private float targetRollAngle = 0;
-    private float currentNeedleAngle = 0;
-    private Boolean lastSpinResult = null;
-    private static final long SPIN_DURATION_MS = 2500;
+    /** Значение, которое показывается как актуальный шанс после окончания результата. */
+    private double displayedChance;
+    /** Момент, до которого поверх шанса показывается результат броска. */
+    private long resultDisplayUntil;
+    /** Результат последнего броска; true — успех, false — провал. */
+    private boolean lastResult;
+    private boolean hasResult;
+    private double resultChance;
 
-    /**
-     * Конструктор экрана апгрейдера.
-     *
-     * @param menu            контейнер меню
-     * @param playerInventory инвентарь игрока
-     * @param title           заголовок окна
-     */
+    /** Текущий угол стрелки компаса, 0 градусов — вверх. */
+    private float arrowAngle;
+    private float spinStartAngle;
+    private float targetArrowAngle;
+    private long spinStartTime;
+    private boolean isSpinning;
+
+    /** Прогресс появления GUI от 0 до 1. */
+    private float openAnimation;
+
     public UpgraderScreen(UpgraderMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-        this.imageWidth = 256;
-        this.imageHeight = 220;
+        this.imageWidth = GUI_WIDTH;
+        this.imageHeight = GUI_HEIGHT;
+        this.displayedChance = 0.0D;
+        this.arrowAngle = 0.0F;
     }
 
     @Override
     protected void init() {
         super.init();
+        this.openAnimation = 0.0F;
 
         int x = this.leftPos;
         int y = this.topPos;
 
-        // Кнопка "КРУТИТЬ" (30, 145) размером 140x20
-        spinButton = this.addRenderableWidget(
-                Button.builder(Component.translatable("gui.upgradermod.spin"), btn -> {
-                    if (!isSpinning) {
-                        NetworkHandler.sendToServer(new SpinPacket());
-                    }
-                }).bounds(x + 30, y + 145, 140, 20).build()
-        );
+        this.spinButton = this.addRenderableWidget(Button.builder(
+                        Component.translatable("gui.upgradermod.spin"), button -> {
+                            if (!this.isSpinning) {
+                                startSpinAnimation();
+                                NetworkHandler.sendToServer(new SpinPacket());
+                            }
+                        })
+                .bounds(x + 40, y + 165, 120, 20)
+                .build());
 
-        // Кнопки множителей x1, x2, x4, x8
-        int multY = y + 145;
-        btnX1 = this.addRenderableWidget(Button.builder(Component.literal("x1"), b -> setMultiplier(1)).bounds(x + 175, multY, 18, 20).build());
-        btnX2 = this.addRenderableWidget(Button.builder(Component.literal("x2"), b -> setMultiplier(2)).bounds(x + 194, multY, 18, 20).build());
-        btnX4 = this.addRenderableWidget(Button.builder(Component.literal("x4"), b -> setMultiplier(4)).bounds(x + 213, multY, 18, 20).build());
-        btnX8 = this.addRenderableWidget(Button.builder(Component.literal("x8"), b -> setMultiplier(8)).bounds(x + 232, multY, 18, 20).build());
+        this.btnX1 = this.addRenderableWidget(Button.builder(Component.literal("x1"), button -> setMultiplier(1))
+                .bounds(x + 166, y + 165, 20, 20).build());
+        this.btnX2 = this.addRenderableWidget(Button.builder(Component.literal("x2"), button -> setMultiplier(2))
+                .bounds(x + 188, y + 165, 20, 20).build());
+        this.btnX4 = this.addRenderableWidget(Button.builder(Component.literal("x4"), button -> setMultiplier(4))
+                .bounds(x + 210, y + 165, 20, 20).build());
+        this.btnX8 = this.addRenderableWidget(Button.builder(Component.literal("x8"), button -> setMultiplier(8))
+                .bounds(x + 232, y + 165, 20, 20).build());
+
+        if (this.minecraft != null && this.minecraft.player != null) {
+            this.minecraft.player.playSound(SoundEvents.UI_BUTTON_CLICK.value(), 0.55F, 1.0F);
+        }
+        updateButtonStates();
     }
 
-    private void setMultiplier(int mult) {
-        this.menu.setMultiplier(mult);
-        NetworkHandler.sendToServer(new SetMultiplierPacket(mult));
+    private void setMultiplier(int multiplier) {
+        if (this.isSpinning) {
+            return;
+        }
+        this.menu.setMultiplier(multiplier);
+        NetworkHandler.sendToServer(new SetMultiplierPacket(multiplier));
+    }
+
+    private void startSpinAnimation() {
+        this.isSpinning = true;
+        this.spinStartTime = System.currentTimeMillis();
+        this.spinStartAngle = this.arrowAngle;
+        this.targetArrowAngle = this.arrowAngle;
+        updateButtonStates();
     }
 
     /**
-     * Вызывается клиентом при получении пакета SpinResultPacket.
-     *
-     * @param success   успешен ли спин
-     * @param chance    рассчитанный шанс
-     * @param rollAngle целевой угол остановки
+     * Получает рассчитанный сервером шанс при изменении входного предмета,
+     * цели или множителя.
+     */
+    public void onChanceUpdate(double chance) {
+        this.displayedChance = Mth.clamp(chance, 0.0D, 100.0D);
+    }
+
+    /**
+     * Получает результат броска и фиксирует рассчитанный на сервере шанс.
      */
     public void onSpinResult(boolean success, double chance, float rollAngle) {
+        this.lastResult = success;
+        this.hasResult = true;
+        this.resultChance = Mth.clamp(chance, 0.0D, 100.0D);
+        this.displayedChance = this.resultChance;
+        this.resultDisplayUntil = System.currentTimeMillis() + RESULT_DISPLAY_MS;
+
         this.isSpinning = true;
         this.spinStartTime = System.currentTimeMillis();
-        this.targetRollAngle = rollAngle;
-        this.lastSpinResult = success;
+        this.spinStartAngle = this.arrowAngle;
+        this.targetArrowAngle = rollAngle;
+        updateButtonStates();
+    }
+
+    @Override
+    protected void containerTick() {
+        super.containerTick();
+
+        this.openAnimation = Math.min(1.0F, this.openAnimation + 0.15F);
+        long now = System.currentTimeMillis();
+
+        if (this.isSpinning) {
+            long elapsed = now - this.spinStartTime;
+            float progress = Mth.clamp((float) elapsed / SPIN_DURATION_MS, 0.0F, 1.0F);
+            float easeOut = 1.0F - (float) Math.pow(1.0F - progress, 3.0F);
+
+            if (this.hasResult) {
+                float rotation = 720.0F * easeOut;
+                this.arrowAngle = normalizeAngle(this.spinStartAngle
+                        + rotation
+                        + (this.targetArrowAngle - this.spinStartAngle) * easeOut);
+            } else {
+                // Пока сервер отвечает, стрелка продолжает вращаться, а шанс остаётся на экране.
+                this.arrowAngle = normalizeAngle(this.spinStartAngle + (elapsed * 0.72F));
+            }
+
+            if (progress >= 1.0F) {
+                this.arrowAngle = normalizeAngle(this.targetArrowAngle);
+                this.isSpinning = false;
+            }
+        }
+
+        if (this.hasResult && now >= this.resultDisplayUntil) {
+            this.hasResult = false;
+        }
+        updateButtonStates();
+    }
+
+    private static float normalizeAngle(float angle) {
+        angle %= 360.0F;
+        return angle < 0.0F ? angle + 360.0F : angle;
+    }
+
+    private void updateButtonStates() {
+        boolean canSpin = !this.isSpinning
+                && !this.menu.getInputStack().isEmpty()
+                && !this.menu.getTargetStack().isEmpty();
+        if (this.spinButton != null) {
+            this.spinButton.active = canSpin;
+        }
+
+        boolean canChangeMultiplier = !this.isSpinning;
+        if (this.btnX1 != null) this.btnX1.active = canChangeMultiplier;
+        if (this.btnX2 != null) this.btnX2.active = canChangeMultiplier;
+        if (this.btnX4 != null) this.btnX4.active = canChangeMultiplier;
+        if (this.btnX8 != null) this.btnX8.active = canChangeMultiplier;
     }
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         this.renderBackground(guiGraphics);
+
+        PoseStack poseStack = guiGraphics.pose();
+        float scale = 0.85F + 0.15F * this.openAnimation;
+        poseStack.pushPose();
+        poseStack.translate(this.width / 2.0F, this.height / 2.0F, 0.0F);
+        poseStack.scale(scale, scale, 1.0F);
+        poseStack.translate(-this.width / 2.0F, -this.height / 2.0F, 0.0F);
+
         super.render(guiGraphics, mouseX, mouseY, partialTick);
+        drawThemedButton(guiGraphics, this.spinButton, Component.translatable("gui.upgradermod.spin"), true, mouseX, mouseY);
+        drawThemedButton(guiGraphics, this.btnX1, Component.literal("x1"), this.menu.getMultiplier() == 1, mouseX, mouseY);
+        drawThemedButton(guiGraphics, this.btnX2, Component.literal("x2"), this.menu.getMultiplier() == 2, mouseX, mouseY);
+        drawThemedButton(guiGraphics, this.btnX4, Component.literal("x4"), this.menu.getMultiplier() == 4, mouseX, mouseY);
+        drawThemedButton(guiGraphics, this.btnX8, Component.literal("x8"), this.menu.getMultiplier() == 8, mouseX, mouseY);
         this.renderTooltip(guiGraphics, mouseX, mouseY);
 
-        int x = this.leftPos;
-        int y = this.topPos;
-
-        // Отрисовка всплывающей подсказки над слотом цели при наведении
-        ItemStack target = this.menu.getTargetStack();
-        if (!target.isEmpty() && mouseX >= x + 189 && mouseX <= x + 207 && mouseY >= y + 39 && mouseY <= y + 57) {
-            guiGraphics.renderTooltip(this.font, target, mouseX, mouseY);
-        }
+        poseStack.popPose();
     }
 
     @Override
@@ -114,25 +234,21 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         int x = this.leftPos;
         int y = this.topPos;
 
-        // Основной фон GUI 256x220
-        guiGraphics.fill(x, y, x + this.imageWidth, y + this.imageHeight, 0xFFC6C6C6);
-        guiGraphics.fill(x + 2, y + 2, x + this.imageWidth - 2, y + this.imageHeight - 2, 0xFF3C3F41);
-        guiGraphics.fill(x + 5, y + 5, x + this.imageWidth - 5, y + this.imageHeight - 5, 0xFF2B2B2B);
+        guiGraphics.fill(x, y, x + GUI_WIDTH, y + GUI_HEIGHT, BACKGROUND_COLOR);
+        guiGraphics.fill(x + 2, y + 2, x + GUI_WIDTH - 2, y + GUI_HEIGHT - 2, PANEL_COLOR);
+        drawFrame(guiGraphics, x, y, GUI_WIDTH, GUI_HEIGHT);
 
-        // Левый слот ставки (50, 40)
-        drawSlot(guiGraphics, x + 49, y + 39);
+        // Слоты по новой раскладке 256x220.
+        drawSlot(guiGraphics, x + 40, y + 45);
+        drawSlot(guiGraphics, x + 198, y + 45);
 
-        // Правый слот цели (190, 40) - рисуется вручную
-        drawSlot(guiGraphics, x + 189, y + 39);
-
-        // Отрисовка предмета в правом слоте цели
         ItemStack target = this.menu.getTargetStack();
         if (!target.isEmpty()) {
-            guiGraphics.renderItem(target, x + 190, y + 40);
-            guiGraphics.renderItemDecorations(this.font, target, x + 190, y + 40);
+            guiGraphics.renderItem(target, x + 198, y + 45);
+            guiGraphics.renderItemDecorations(this.font, target, x + 198, y + 45);
         }
 
-        // Инвентарь игрока (слоты)
+        // Инвентарь игрока сохраняет стандартные слоты меню и получает ту же тёмную подложку.
         for (int row = 0; row < 3; ++row) {
             for (int col = 0; col < 9; ++col) {
                 drawSlot(guiGraphics, x + 47 + col * 18, y + 137 + row * 18);
@@ -142,125 +258,158 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
             drawSlot(guiGraphics, x + 47 + col * 18, y + 195);
         }
 
-        // Круг-компас рулетки: центр (128, 90), радиус 45
-        drawRouletteWheel(guiGraphics, x + 128, y + 90, 45);
+        drawCompass(guiGraphics, x + 128, y + 110);
     }
 
-    private void drawSlot(GuiGraphics guiGraphics, int sx, int sy) {
-        guiGraphics.fill(sx, sy, sx + 18, sy + 18, 0xFF373737);
-        guiGraphics.fill(sx + 1, sy + 1, sx + 17, sy + 17, 0xFF8B8B8B);
+    private void drawFrame(GuiGraphics guiGraphics, int x, int y, int width, int height) {
+        guiGraphics.fill(x, y, x + width, y + 2, FRAME_COLOR);
+        guiGraphics.fill(x, y + height - 2, x + width, y + height, FRAME_COLOR);
+        guiGraphics.fill(x, y, x + 2, y + height, FRAME_COLOR);
+        guiGraphics.fill(x + width - 2, y, x + width, y + height, FRAME_COLOR);
     }
 
-    private void drawRouletteWheel(GuiGraphics guiGraphics, int centerX, int centerY, int radius) {
-        ItemStack input = this.menu.getInputStack();
-        ItemStack target = this.menu.getTargetStack();
-        double inputVal = ValueCalculator.getItemStackValue(input);
-        double targetVal = ValueCalculator.getItemStackValue(target);
-        int multiplier = this.menu.getMultiplier();
+    private void drawSlot(GuiGraphics guiGraphics, int slotX, int slotY) {
+        guiGraphics.fill(slotX, slotY, slotX + 18, slotY + 18, FRAME_COLOR);
+        guiGraphics.fill(slotX + 2, slotY + 2, slotX + 16, slotY + 16, INNER_COMPASS_COLOR);
+    }
 
-        double chance = ChanceCalculator.calculateChance(inputVal, targetVal, multiplier);
-        float winSectorDegrees = (float) ((chance / 100.0) * 360.0);
-
-        // Обновление угла стрелки во время прокрутки
-        if (isSpinning) {
-            long elapsed = System.currentTimeMillis() - spinStartTime;
-            if (elapsed >= SPIN_DURATION_MS) {
-                isSpinning = false;
-                currentNeedleAngle = targetRollAngle;
-            } else {
-                float progress = (float) elapsed / SPIN_DURATION_MS;
-                float easeOut = 1.0f - (float) Math.pow(1.0f - progress, 3);
-                currentNeedleAngle = (360.0f * 5.0f * easeOut + targetRollAngle * easeOut) % 360.0f;
-            }
-        }
-
-        // Отрисовка сектора рулетки пикселями
-        for (int dy = -radius; dy <= radius; dy++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                int distSq = dx * dx + dy * dy;
-                if (distSq <= radius * radius) {
-                    if (distSq >= (radius - 2) * (radius - 2)) {
-                        // Обод колеса
-                        guiGraphics.fill(centerX + dx, centerY + dy, centerX + dx + 1, centerY + dy + 1, 0xFFE0E0E0);
-                    } else {
-                        // Угол точки в градусах от 0 до 360 (0 градусов вверх)
-                        double angle = Math.toDegrees(Math.atan2(dx, -dy));
-                        if (angle < 0) {
-                            angle += 360.0;
-                        }
-
-                        if (angle < winSectorDegrees) {
-                            // Зелёный сектор победы
-                            guiGraphics.fill(centerX + dx, centerY + dy, centerX + dx + 1, centerY + dy + 1, 0xFF2ECC71);
-                        } else {
-                            // Красный сектор проигрыша
-                            guiGraphics.fill(centerX + dx, centerY + dy, centerX + dx + 1, centerY + dy + 1, 0xFFE74C3C);
-                        }
-                    }
+    /** Компас с концентрическими кольцами, делениями и вращающейся стрелкой. */
+    private void drawCompass(GuiGraphics guiGraphics, int centerX, int centerY) {
+        for (int dx = -38; dx <= 38; dx++) {
+            for (int dy = -38; dy <= 38; dy++) {
+                if (dx * dx + dy * dy <= 38 * 38) {
+                    guiGraphics.fill(centerX + dx, centerY + dy,
+                            centerX + dx + 1, centerY + dy + 1, INNER_COMPASS_COLOR);
                 }
             }
         }
 
-        // Отрисовка стрелки-указателя от центра к текущему углу
-        double rad = Math.toRadians(currentNeedleAngle - 90.0);
-        int needleLength = radius - 6;
-        int tipX = centerX + (int) (Math.cos(rad) * needleLength);
-        int tipY = centerY + (int) (Math.sin(rad) * needleLength);
+        for (int angle = 0; angle < 360; angle++) {
+            double radians = Math.toRadians(angle);
+            for (int radius = 42; radius <= 45; radius++) {
+                int px = centerX + (int) (Math.cos(radians) * radius);
+                int py = centerY + (int) (Math.sin(radians) * radius);
+                guiGraphics.fill(px, py, px + 1, py + 1, FRAME_COLOR);
+            }
+        }
 
-        // Рисуем линию стрелки
-        guiGraphics.fill(centerX - 1, centerY - 1, centerX + 2, centerY + 2, 0xFFFFD700);
-        guiGraphics.fill(tipX - 1, tipY - 1, tipX + 2, tipY + 2, 0xFFFFFFFF);
+        for (int angle = 0; angle < 360; angle += 6) {
+            double radians = Math.toRadians(angle);
+            int length = angle % 30 == 0 ? 5 : 3;
+            int color = angle % 30 == 0 ? ACCENT_COLOR : FRAME_COLOR;
+            for (int radius = 38; radius < 38 + length; radius++) {
+                int px = centerX + (int) (Math.cos(radians) * radius);
+                int py = centerY + (int) (Math.sin(radians) * radius);
+                guiGraphics.fill(px, py, px + 1, py + 1, color);
+            }
+        }
+
+        double arrowRadians = Math.toRadians(this.arrowAngle - 90.0F);
+        for (int radius = 0; radius <= 35; radius++) {
+            int px = centerX + (int) (Math.cos(arrowRadians) * radius);
+            int py = centerY + (int) (Math.sin(arrowRadians) * radius);
+            int thickness = radius < 20 ? 2 : 1;
+            guiGraphics.fill(px - thickness / 2, py - thickness / 2,
+                    px + thickness / 2 + 1, py + thickness / 2 + 1, ACCENT_COLOR);
+        }
+        guiGraphics.fill(centerX - 3, centerY - 3, centerX + 3, centerY + 3, ACCENT_COLOR);
+
+        guiGraphics.drawCenteredString(this.font, "N", centerX, centerY - 34, GOLD_COLOR);
+        guiGraphics.drawCenteredString(this.font, "S", centerX, centerY + 27, MUTED_COLOR);
+        guiGraphics.drawString(this.font, "W", centerX - 34, centerY - 4, MUTED_COLOR);
+        guiGraphics.drawString(this.font, "E", centerX + 29, centerY - 4, MUTED_COLOR);
+    }
+
+    private void drawThemedButton(GuiGraphics guiGraphics, Button button, Component label,
+                                  boolean selected, double mouseX, double mouseY) {
+        if (button == null) {
+            return;
+        }
+
+        int buttonX = button.getX();
+        int buttonY = button.getY();
+        boolean hovered = mouseInside(button, mouseX, mouseY);
+        int background;
+        int textColor;
+
+        if (!button.active) {
+            background = 0xFF555555;
+            textColor = MUTED_COLOR;
+        } else if (selected || button == this.spinButton) {
+            background = hovered ? 0xFFFF6B8A : ACCENT_COLOR;
+            textColor = 0xFFFFFFFF;
+        } else {
+            background = hovered ? INNER_COMPASS_COLOR : PANEL_COLOR;
+            textColor = MUTED_COLOR;
+        }
+
+        guiGraphics.fill(buttonX, buttonY, buttonX + button.getWidth(), buttonY + button.getHeight(), FRAME_COLOR);
+        guiGraphics.fill(buttonX + 2, buttonY + 2,
+                buttonX + button.getWidth() - 2, buttonY + button.getHeight() - 2, background);
+        guiGraphics.drawCenteredString(this.font, label,
+                buttonX + button.getWidth() / 2, buttonY + 6, textColor);
+    }
+
+    private boolean mouseInside(Button button, double mouseX, double mouseY) {
+        return mouseX >= button.getX() && mouseX < button.getX() + button.getWidth()
+                && mouseY >= button.getY() && mouseY < button.getY() + button.getHeight();
     }
 
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
-        // Заголовок "АПГРЕЙД ПРЕДМЕТОВ" по центру вверху
-        Component titleComp = Component.translatable("gui.upgradermod.title");
-        int titleWidth = this.font.width(titleComp);
-        guiGraphics.drawString(this.font, titleComp, (this.imageWidth - titleWidth) / 2, 8, 0xFFD700, true);
+        Component title = Component.translatable("gui.upgradermod.title");
+        guiGraphics.drawCenteredString(this.font, title, 128, 10, GOLD_COLOR);
 
-        // Подписи под слотами ставки и цели
+        guiGraphics.drawString(this.font, Component.translatable("gui.upgradermod.input_hint_1"), 30, 70, TEXT_COLOR);
+        guiGraphics.drawString(this.font, Component.translatable("gui.upgradermod.input_hint_2"), 30, 82, MUTED_COLOR);
+        guiGraphics.drawString(this.font, Component.translatable("gui.upgradermod.target_hint_1"), 185, 70, TEXT_COLOR);
+        guiGraphics.drawString(this.font, Component.translatable("gui.upgradermod.target_hint_2"), 185, 82, MUTED_COLOR);
+
+        String chanceText;
+        int chanceColor;
+        if (this.hasResult && System.currentTimeMillis() < this.resultDisplayUntil) {
+            chanceText = this.lastResult
+                    ? Component.translatable("gui.upgradermod.result_success",
+                    ChanceCalculator.formatChance(this.resultChance)).getString()
+                    : Component.translatable("gui.upgradermod.result_failure").getString();
+            chanceColor = this.lastResult ? 0xFF44FF88 : ACCENT_COLOR;
+        } else {
+            chanceText = ChanceCalculator.formatChance(this.displayedChance);
+            chanceColor = ACCENT_COLOR;
+        }
+
+        guiGraphics.drawCenteredString(this.font, chanceText, 128, 105, chanceColor);
+        guiGraphics.drawCenteredString(this.font,
+                Component.translatable("gui.upgradermod.chance_label"), 128, 120, MUTED_COLOR);
+
         ItemStack input = this.menu.getInputStack();
         ItemStack target = this.menu.getTargetStack();
-        double inputVal = ValueCalculator.getItemStackValue(input);
-        double targetVal = ValueCalculator.getItemStackValue(target);
-        int mult = this.menu.getMultiplier();
-
-        String inputValStr = String.format(Locale.ROOT, "%.0f", inputVal);
-        String targetValStr = String.format(Locale.ROOT, "%.0f", targetVal);
-
-        guiGraphics.drawString(this.font, inputValStr, 59 - this.font.width(inputValStr) / 2, 60, 0xAAAAAA, false);
-        guiGraphics.drawString(this.font, targetValStr, 198 - this.font.width(targetValStr) / 2, 60, 0xAAAAAA, false);
-
-        // Отображение шанса
-        double chance = ChanceCalculator.calculateChance(inputVal, targetVal, mult);
-        String chanceStr = ChanceCalculator.formatChance(chance);
-        Component chanceComp = Component.translatable("gui.upgradermod.chance", chanceStr);
-        int chanceWidth = this.font.width(chanceComp);
-        guiGraphics.drawString(this.font, chanceComp, (this.imageWidth - chanceWidth) / 2, 23, 0x55FF55, true);
-
-        // Баннер результата последнего спина
-        if (lastSpinResult != null && !isSpinning) {
-            Component resComp = lastSpinResult ? Component.translatable("gui.upgradermod.win") : Component.translatable("gui.upgradermod.loss");
-            int resColor = lastSpinResult ? 0x2ECC71 : 0xE74C3C;
-            int rw = this.font.width(resComp);
-            guiGraphics.drawString(this.font, resComp, (this.imageWidth - rw) / 2, 70, resColor, true);
-        }
+        String inputValue = String.format(Locale.ROOT, "%.0f", ValueCalculator.getItemStackValue(input));
+        String targetValue = String.format(Locale.ROOT, "%.0f", ValueCalculator.getItemStackValue(target));
+        guiGraphics.drawCenteredString(this.font, inputValue, 49, 64, MUTED_COLOR);
+        guiGraphics.drawCenteredString(this.font, targetValue, 207, 64, MUTED_COLOR);
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         int x = this.leftPos;
         int y = this.topPos;
-
-        // Клик по правому слоту (190, 40) открывает CatalogScreen
-        if (mouseX >= x + 189 && mouseX <= x + 207 && mouseY >= y + 39 && mouseY <= y + 57) {
+        if (mouseX >= x + 198 && mouseX <= x + 216
+                && mouseY >= y + 45 && mouseY <= y + 63) {
             if (this.minecraft != null) {
                 this.minecraft.setScreen(new CatalogScreen(this));
                 return true;
             }
         }
-
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    public double getDisplayedChance() {
+        return this.displayedChance;
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
     }
 }

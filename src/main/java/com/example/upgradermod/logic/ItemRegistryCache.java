@@ -1,5 +1,6 @@
 package com.example.upgradermod.logic;
 
+import com.example.upgradermod.ModConfig;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -33,7 +34,7 @@ public class ItemRegistryCache {
         for (Item item : ForgeRegistries.ITEMS) {
             if (item != Items.AIR) {
                 ItemStack stack = new ItemStack(item);
-                if (!stack.isEmpty()) {
+                if (!stack.isEmpty() && !ModConfig.isBlacklisted(stack)) {
                     ALL_ITEMS.add(stack);
                 }
             }

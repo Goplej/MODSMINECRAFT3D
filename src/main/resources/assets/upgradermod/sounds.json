@@ -1,0 +1,42 @@
+{
+  "spin_start": {
+    "subtitle": "sound.upgradermod.spin_start",
+    "sounds": [
+      {
+        "name": "minecraft:block.note_block.hat",
+        "volume": 0.65,
+        "pitch": 1.15
+      }
+    ]
+  },
+  "spin_success": {
+    "subtitle": "sound.upgradermod.spin_success",
+    "sounds": [
+      {
+        "name": "minecraft:block.note_block.pling",
+        "volume": 0.8,
+        "pitch": 1.15
+      },
+      {
+        "name": "minecraft:entity.player.levelup",
+        "volume": 0.45,
+        "pitch": 1.1
+      }
+    ]
+  },
+  "spin_failure": {
+    "subtitle": "sound.upgradermod.spin_failure",
+    "sounds": [
+      {
+        "name": "minecraft:block.note_block.bass",
+        "volume": 0.8,
+        "pitch": 0.8
+      },
+      {
+        "name": "minecraft:block.anvil.land",
+        "volume": 0.25,
+        "pitch": 1.1
+      }
+    ]
+  }
+}

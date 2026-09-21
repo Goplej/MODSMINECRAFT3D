@@ -37,6 +37,13 @@ public class NetworkHandler {
      * Регистрирует все сетевые пакеты мода.
      */
     public static void register() {
+        // C->S: Быстрое открытие апгрейдера клавишей 0
+        CHANNEL.messageBuilder(OpenUpgraderPacket.class, nextId(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(OpenUpgraderPacket::encode)
+                .decoder(OpenUpgraderPacket::decode)
+                .consumerMainThread(OpenUpgraderPacket::handle)
+                .add();
+
         // C->S: Запуск прокрутки рулетки
         CHANNEL.messageBuilder(SpinPacket.class, nextId(), NetworkDirection.PLAY_TO_SERVER)
                 .encoder(SpinPacket::encode)
@@ -49,6 +56,13 @@ public class NetworkHandler {
                 .encoder(SpinResultPacket::encode)
                 .decoder(SpinResultPacket::decode)
                 .consumerMainThread(SpinResultPacket::handle)
+                .add();
+
+        // S->C: Актуальный шанс открытого меню
+        CHANNEL.messageBuilder(UpdateChancePacket.class, nextId(), NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(UpdateChancePacket::encode)
+                .decoder(UpdateChancePacket::decode)
+                .consumerMainThread(UpdateChancePacket::handle)
                 .add();
 
         // C->S: Установка целевого предмета
