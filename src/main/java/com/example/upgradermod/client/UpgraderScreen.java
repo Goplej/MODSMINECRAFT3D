@@ -25,6 +25,8 @@ import org.slf4j.Logger;
  * Сервер присылает сюда рассчитанный шанс через UpdateChancePacket и
  * подтверждённое состояние через SyncStatePacket; клиент не предсказывает
  * результат спина и не считает шанс самостоятельно.
+ * Стрелка компаса вращается с постоянной скоростью, а после ответа сервера
+ * плавно замедляется и останавливается ровно на выпавшем угле — без телепортации.
  * Финальная компоновка рассчитана на GUI 256x272.
  *
  * @author Popipok
@@ -37,6 +39,23 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     private static final int GUI_WIDTH = 256;
     private static final int GUI_HEIGHT = 272;
     private static final long RESULT_DISPLAY_MS = 2000L;
+    /** Сколько показывать красное «✗ Отклонено» при reject сервера. */
+    private static final long REJECT_DISPLAY_MS = 2500L;
+    /** Клиентский таймаут ожидания результата: если сервер молчит дольше, интерфейс разблокируется. */
+    private static final long CLIENT_SPIN_TIMEOUT_MS = 10000L;
+
+    /**
+     * Скорость стрелки в фазе ожидания, градусов за миллисекунду.
+     * 0.72 град/мс = 720 град/с = 2 оборота в секунду.
+     */
+    private static final float SPIN_SPEED_DEG_PER_MS = 0.72F;
+    /**
+     * Минимальный доворот при остановке: стрелка делает как минимум один
+     * дополнительный оборот и плавно тормозит до нуля ровно на угле сервера.
+     */
+    private static final float LANDING_MIN_TRAVEL_DEG = 360.0F;
+    /** Короткое торможение при reject или таймауте: стрелка плавно замирает на месте. */
+    private static final float BRAKE_TRAVEL_DEG = 108.0F;
 
     private static final int BACKGROUND_COLOR = 0xFF1A1A2E;
     private static final int PANEL_COLOR = 0xFF211B30;
@@ -49,6 +68,26 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     private static final int MUTED_COLOR = 0xFF9A9AB0;
     private static final int DISABLED_COLOR = 0xFF3A3A4A;
     private static final int SUCCESS_COLOR = 0xFF44FF88;
+    private static final int FAILURE_COLOR = 0xFFFF6E6E;
+    private static final int REJECT_COLOR = 0xFFFF5555;
+    private static final int REJECT_REASON_COLOR = 0xFFB87A7A;
+
+    /**
+     * Ключи локализации причин отклонения. Индексы строго соответствуют
+     * кодам REJECT_* из UpgraderMenu.
+     */
+    private static final String[] REJECT_REASON_KEYS = {
+            "gui.upgradermod.reject.generic",
+            "gui.upgradermod.reject.locked",
+            "gui.upgradermod.reject.empty",
+            "gui.upgradermod.reject.blacklist",
+            "gui.upgradermod.reject.value",
+            "gui.upgradermod.reject.identical",
+            "gui.upgradermod.reject.creative",
+            "gui.upgradermod.reject.downgrade",
+            "gui.upgradermod.reject.tax",
+            "gui.upgradermod.reject.error"
+    };
 
     // ---- Координаты элементов (относительно leftPos/topPos) ----
     private static final int INPUT_SLOT_X = 29;
@@ -85,12 +124,25 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     private boolean lastResult;
     private boolean hasResult;
     private double resultChance;
+    /** Результат получен, но показывается только после полной остановки стрелки. */
+    private boolean resultPendingDisplay;
+    /** Момент, до которого показывается красное уведомление об отклонении спина. */
+    private long rejectDisplayUntil;
+    /** Код причины последнего отклонения (REJECT_* из UpgraderMenu). */
+    private int rejectReason;
 
     /** Текущий угол стрелки компаса, 0 градусов — вверх. */
     private float arrowAngle;
     private float spinStartAngle;
     private long spinStartTime;
+    /** Фаза ожидания ответа сервера: стрелка вращается с постоянной скоростью. */
     private boolean isSpinning;
+    /** Фаза остановки: стрелка замедляется и замирает ровно на целевом угле. */
+    private boolean isLanding;
+    private long landStartTime;
+    private long landDuration;
+    private float landStartAngle;
+    private float landTargetAngle;
 
     public UpgraderScreen(UpgraderMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
@@ -108,12 +160,7 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         int y = this.topPos;
 
         this.spinButton = this.addRenderableWidget(Button.builder(
-                        Component.translatable("gui.upgradermod.spin"), button -> {
-                            if (!this.isSpinning) {
-                                startWaitingSpin();
-                                NetworkHandler.sendToServer(new SpinPacket());
-                            }
-                        })
+                        Component.translatable("gui.upgradermod.spin"), button -> trySpin())
                 .bounds(x + 16, y + ROW2_Y, 90, ROW2_H)
                 .build());
 
@@ -148,9 +195,14 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         updateButtonStates();
     }
 
+    /** Интерфейс занят: ждём ответ сервера или стрелка ещё останавливается. */
+    private boolean isBusy() {
+        return this.isSpinning || this.isLanding;
+    }
+
     /** Запрашивает изменение количества цели; сервер подтвердит его через SyncStatePacket. */
     private void changeTargetCount(int delta) {
-        if (this.isSpinning || this.menu.getTargetStack().isEmpty()) {
+        if (isBusy() || this.menu.getTargetStack().isEmpty()) {
             return;
         }
         int requested = Mth.clamp(this.menu.getTargetCount() + delta, 1, UpgraderMenu.MAX_TARGET_COUNT);
@@ -159,14 +211,14 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
 
     /** Отправляет серверу пресет шанса; сервер сам подберёт количество цели. */
     private void requestPreset(int percent) {
-        if (this.isSpinning) {
+        if (isBusy()) {
             return;
         }
         NetworkHandler.sendToServer(new ChancePresetPacket(percent));
     }
 
     private void setMultiplier(int multiplier) {
-        if (this.isSpinning) {
+        if (isBusy()) {
             return;
         }
         NetworkHandler.sendToServer(new SetMultiplierPacket(multiplier));
@@ -176,9 +228,90 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     private void startWaitingSpin() {
         this.isSpinning = true;
         this.hasResult = false;
+        this.resultPendingDisplay = false;
+        this.rejectDisplayUntil = 0L;
         this.spinStartTime = System.currentTimeMillis();
         this.spinStartAngle = this.arrowAngle;
         updateButtonStates();
+    }
+
+    /**
+     * Отправляет запрос спина на сервер. Локальная превалидация отсекает
+     * заведомо отклоняемые запросы (пустая ставка или цель), а ошибка
+     * отправки пакета не оставляет интерфейс заблокированным.
+     */
+    private void trySpin() {
+        if (isBusy()) {
+            return;
+        }
+        if (this.menu.getInputStack().isEmpty() || this.menu.getTargetStack().isEmpty()) {
+            // Не отправляем спин, который сервер гарантированно отклонит.
+            return;
+        }
+        startWaitingSpin();
+        try {
+            NetworkHandler.sendToServer(new SpinPacket());
+        } catch (Throwable t) {
+            LOGGER.error("Failed to send SpinPacket", t);
+            this.isSpinning = false;
+            startBrake();
+            updateButtonStates();
+        }
+    }
+
+    /**
+     * Начинает плавную остановку стрелки ровно на угле, выпавшем на сервере.
+     * Стрелка проходит вперёд как минимум один дополнительный оборот и
+     * замедляется с постоянным замедлением до полной остановки.
+     *
+     * @param rollAngle конечный угол стрелки (0..360), рассчитанный сервером
+     */
+    private void startLanding(float rollAngle) {
+        float current = this.arrowAngle;
+        // Угловое расстояние вперёд до целевого угла (0..360).
+        float forwardGap = normalizeAngle(rollAngle - current);
+        beginLanding(current, LANDING_MIN_TRAVEL_DEG + forwardGap);
+    }
+
+    /** Короткое плавное торможение на месте: reject, таймаут или ошибка отправки. */
+    private void startBrake() {
+        beginLanding(this.arrowAngle, BRAKE_TRAVEL_DEG);
+    }
+
+    /**
+     * Физика остановки: равнозамедленное движение от текущей скорости
+     * SPIN_SPEED_DEG_PER_MS до нуля точно на дистанции travelDeg.
+     * Длительность D = 2 * travel / v0, угол(t) = start + v0*t - v0*t^2 / (2D),
+     * поэтому скорость в начале торможения в точности равна скорости вращения —
+     * переход без рывка, в конце — ровно ноль и ровно целевой угол.
+     */
+    private void beginLanding(float startAngle, float travelDeg) {
+        this.landStartAngle = startAngle;
+        this.landTargetAngle = startAngle + travelDeg;
+        this.landStartTime = System.currentTimeMillis();
+        this.landDuration = Math.max(1L, (long) (2.0 * travelDeg / SPIN_SPEED_DEG_PER_MS));
+        this.isLanding = true;
+    }
+
+    /**
+     * Текущий угол стрелки как функция времени. Вызывается каждый кадр рендера,
+     * поэтому вращение и остановка плавные даже между тиками контейнера.
+     */
+    private float computeArrowAngle(long now) {
+        if (this.isSpinning) {
+            return this.spinStartAngle + (now - this.spinStartTime) * SPIN_SPEED_DEG_PER_MS;
+        }
+        if (this.isLanding) {
+            long elapsed = now - this.landStartTime;
+            if (elapsed >= this.landDuration) {
+                return this.landTargetAngle;
+            }
+            float t = elapsed;
+            float duration = this.landDuration;
+            return this.landStartAngle + SPIN_SPEED_DEG_PER_MS * t
+                    - SPIN_SPEED_DEG_PER_MS * t * t / (2.0F * duration);
+        }
+        return this.arrowAngle;
     }
 
     /**
@@ -192,16 +325,44 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     /**
      * Получает результат броска и фиксирует рассчитанные на сервере шанс и угол.
      * Только этот пакет определяет, что увидит игрок: успех или провал.
+     * Стрелка плавно тормозит и останавливается ровно на выпавшем угле;
+     * результат показывается после полной остановки.
+     * Reject показывается красным «✗ Отклонено» с причиной — но только если
+     * клиент реально ждал результат: запоздалые reject-пакеты игнорируются,
+     * чтобы уведомление не вспыхивало при обычной работе с кнопками.
+     *
+     * @param rejected  отклонён ли спин сервером
+     * @param success   успешен ли апгрейд (имеет смысл только без rejected)
+     * @param chance    шанс в процентах
+     * @param rollAngle угол остановки стрелки (0..360)
+     * @param reason    код причины отклонения (REJECT_* из UpgraderMenu)
      */
-    public void onSpinResult(boolean rejected, boolean success, double chance, float rollAngle) {
+    public void onSpinResult(boolean rejected, boolean success, double chance, float rollAngle, int reason) {
+        long now = System.currentTimeMillis();
+        if (rejected) {
+            if (!this.isSpinning) {
+                // Клиент не ждёт результат: reject пришёл с опозданием и ничего не значит.
+                LOGGER.debug("Ignoring stale spin reject (reason code {})", reason);
+                return;
+            }
+            this.isSpinning = false;
+            this.hasResult = false;
+            this.resultPendingDisplay = false;
+            this.rejectReason = reason;
+            this.rejectDisplayUntil = now + REJECT_DISPLAY_MS;
+            // Сектор шанса не должен схлопываться: ставка не была принята.
+            this.resultChance = this.displayedChance;
+            startBrake();
+            updateButtonStates();
+            return;
+        }
+
         this.isSpinning = false;
-        this.hasResult = !rejected;
+        this.rejectDisplayUntil = 0L;
         this.lastResult = success;
         this.resultChance = Mth.clamp(chance, 0.0D, 100.0D);
-        if (!rejected) {
-            this.arrowAngle = normalizeAngle(rollAngle);
-        }
-        this.resultDisplayUntil = System.currentTimeMillis() + RESULT_DISPLAY_MS;
+        this.resultPendingDisplay = true;
+        startLanding(rollAngle);
         updateButtonStates();
     }
 
@@ -209,9 +370,22 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     protected void containerTick() {
         super.containerTick();
         long now = System.currentTimeMillis();
-        if (this.isSpinning) {
-            // No local result prediction or timeout unlock: the server settles after 40 ticks.
-            this.arrowAngle = normalizeAngle(this.spinStartAngle + (now - this.spinStartTime) * 0.72F);
+        if (this.isSpinning && now - this.spinStartTime >= CLIENT_SPIN_TIMEOUT_MS) {
+            // Сервер молчит дольше 10 секунд — плавно тормозим и разблокируем интерфейс.
+            this.isSpinning = false;
+            this.resultPendingDisplay = false;
+            LOGGER.warn("Spin wait cancelled: no result from server within {} ms", CLIENT_SPIN_TIMEOUT_MS);
+            startBrake();
+        }
+        if (this.isLanding && now >= this.landStartTime + this.landDuration) {
+            // Стрелка остановилась ровно на целевом угле — можно показать результат.
+            this.isLanding = false;
+            this.arrowAngle = this.landTargetAngle;
+            if (this.resultPendingDisplay) {
+                this.resultPendingDisplay = false;
+                this.hasResult = true;
+                this.resultDisplayUntil = now + RESULT_DISPLAY_MS;
+            }
         }
         if (this.hasResult && now >= this.resultDisplayUntil) this.hasResult = false;
         updateButtonStates();
@@ -222,27 +396,53 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         return angle < 0.0F ? angle + 360.0F : angle;
     }
 
+    /** Показывается ли сейчас красное уведомление об отклонении спина. */
+    private boolean isRejectShowing(long now) {
+        return !isBusy() && now < this.rejectDisplayUntil;
+    }
+
+    /** Ключ локализации причины последнего отклонения. */
+    private String rejectReasonKey() {
+        int index = Mth.clamp(this.rejectReason, 0, REJECT_REASON_KEYS.length - 1);
+        return REJECT_REASON_KEYS[index];
+    }
+
+    /** Подсказка, объясняющая игроку, почему кнопка КРУТИТЬ неактивна. */
+    private Component inactiveHint() {
+        if (isBusy()) {
+            return null;
+        }
+        if (this.menu.getInputStack().isEmpty()) {
+            return Component.translatable("gui.upgradermod.hint_need_input");
+        }
+        if (this.menu.getTargetStack().isEmpty()) {
+            return Component.translatable("gui.upgradermod.hint_need_target");
+        }
+        return null;
+    }
+
     private void updateButtonStates() {
+        boolean busy = isBusy();
         boolean hasInput = !this.menu.getInputStack().isEmpty();
         boolean hasTarget = !this.menu.getTargetStack().isEmpty();
 
         if (this.spinButton != null) {
-            this.spinButton.active = !this.isSpinning && hasInput && hasTarget;
+            this.spinButton.active = !busy && hasInput && hasTarget;
         }
         if (this.countMinusButton != null) {
-            this.countMinusButton.active = !this.isSpinning && hasTarget
+            this.countMinusButton.active = !busy && hasTarget
                     && this.menu.getTargetCount() > 1;
         }
         if (this.countPlusButton != null) {
-            this.countPlusButton.active = !this.isSpinning && hasTarget
+            this.countPlusButton.active = !busy && hasTarget
                     && this.menu.getTargetCount() < UpgraderMenu.MAX_TARGET_COUNT;
         }
-        boolean presetActive = !this.isSpinning && hasInput && hasTarget;
+        boolean presetActive = !busy && hasInput && hasTarget;
         if (this.preset30Button != null) this.preset30Button.active = presetActive;
         if (this.preset50Button != null) this.preset50Button.active = presetActive;
         if (this.preset80Button != null) this.preset80Button.active = presetActive;
 
-        boolean canChangeMultiplier = !this.isSpinning;
+        boolean canChangeMultiplier = !busy;
         if (this.btnX1 != null) this.btnX1.active = canChangeMultiplier;
         if (this.btnX2 != null) this.btnX2.active = canChangeMultiplier;
         if (this.btnX4 != null) this.btnX4.active = canChangeMultiplier;
@@ -263,10 +463,14 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     }
 
     private void renderInternal(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        // Угол пересчитывается каждый кадр: вращение и торможение плавные.
+        this.arrowAngle = computeArrowAngle(System.currentTimeMillis());
         this.renderBackground(guiGraphics);
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        drawThemedButton(guiGraphics, this.spinButton, Component.translatable(this.isSpinning ? "gui.upgradermod.spinning" : "gui.upgradermod.spin"), true, mouseX, mouseY);
+        drawThemedButton(guiGraphics, this.spinButton,
+                Component.translatable(isBusy() ? "gui.upgradermod.spinning" : "gui.upgradermod.spin"),
+                true, mouseX, mouseY);
         drawThemedButton(guiGraphics, this.countMinusButton, Component.literal("-"), false, mouseX, mouseY);
         drawThemedButton(guiGraphics, this.countPlusButton, Component.literal("+"), false, mouseX, mouseY);
         drawThemedButton(guiGraphics, this.preset30Button, Component.literal("30%"), false, mouseX, mouseY);
@@ -328,9 +532,11 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
     /**
      * Компасоподобный индикатор рулетки: концентрические кольца, деления
      * и вращающаяся стрелка. Без букв и обозначений сторон света.
+     * Во время остановки стрелки и показа результата сектор соответствует
+     * шансу именно этого броска.
      */
     private double visibleChance() {
-        return this.hasResult ? this.resultChance : this.displayedChance;
+        return (this.isLanding || this.hasResult) ? this.resultChance : this.displayedChance;
     }
 
     private int chanceSectorColor() {
@@ -446,27 +652,49 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
         guiGraphics.drawCenteredString(this.font,
                 ChanceCalculator.formatChance(visibleChance()), 128, 81, TEXT_COLOR);
 
-        // Шанс и его подпись.
-        String chanceText;
-        int chanceColor;
-        if (this.hasResult && !this.isSpinning
-                && System.currentTimeMillis() < this.resultDisplayUntil) {
-            chanceText = this.lastResult
+        // Строка состояния под компасом: отклонение сервера с причиной,
+        // результат броска, ожидание/торможение стрелки, подсказка или шанс.
+        long now = System.currentTimeMillis();
+        boolean busy = isBusy();
+        String statusText;
+        int statusColor;
+        String secondLine = null;
+        int secondLineColor = MUTED_COLOR;
+        boolean showChanceLabel = false;
+        if (this.isRejectShowing(now)) {
+            statusText = Component.translatable("gui.upgradermod.result_rejected").getString();
+            statusColor = REJECT_COLOR;
+            secondLine = Component.translatable(rejectReasonKey()).getString();
+            secondLineColor = REJECT_REASON_COLOR;
+        } else if (this.hasResult && !busy && now < this.resultDisplayUntil) {
+            statusText = this.lastResult
                     ? Component.translatable("gui.upgradermod.result_success",
                     ChanceCalculator.formatChance(this.resultChance)).getString()
                     : Component.translatable("gui.upgradermod.result_failure").getString();
-            chanceColor = this.lastResult ? SUCCESS_COLOR : ACCENT_COLOR;
-        } else if (this.isSpinning) {
-            chanceText = "...";
-            chanceColor = MUTED_COLOR;
+            statusColor = this.lastResult ? SUCCESS_COLOR : FAILURE_COLOR;
+        } else if (busy) {
+            statusText = "...";
+            statusColor = MUTED_COLOR;
         } else {
-            chanceText = ChanceCalculator.formatChance(this.displayedChance);
-            chanceColor = ACCENT_COLOR;
+            Component hint = inactiveHint();
+            if (hint != null) {
+                // Кнопка неактивна: подсказываем, чего не хватает для спина.
+                statusText = hint.getString();
+                statusColor = ACCENT_HOVER_COLOR;
+            } else {
+                statusText = ChanceCalculator.formatChance(this.displayedChance);
+                statusColor = ACCENT_COLOR;
+                showChanceLabel = true;
+            }
         }
 
-        guiGraphics.drawCenteredString(this.font, chanceText, 128, 112, chanceColor);
-        guiGraphics.drawCenteredString(this.font,
-                Component.translatable("gui.upgradermod.chance_label"), 128, 122, MUTED_COLOR);
+        guiGraphics.drawCenteredString(this.font, statusText, 128, 112, statusColor);
+        if (secondLine != null) {
+            guiGraphics.drawCenteredString(this.font, secondLine, 128, 122, secondLineColor);
+        } else if (showChanceLabel) {
+            guiGraphics.drawCenteredString(this.font,
+                    Component.translatable("gui.upgradermod.chance_label"), 128, 122, MUTED_COLOR);
+        }
 
         // Подпись блока количества цели.
         guiGraphics.drawCenteredString(this.font,
@@ -477,13 +705,14 @@ public class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (this.isSpinning) return true;
+        // Пока стрелка крутится или останавливается — клики по GUI игнорируются.
+        if (isBusy()) return true;
         int x = this.leftPos;
         int y = this.topPos;
         // Клик по слоту цели открывает каталог предметов.
         if (mouseX >= x + TARGET_SLOT_X - 1 && mouseX <= x + TARGET_SLOT_X + 17
                 && mouseY >= y + TARGET_SLOT_Y - 1 && mouseY <= y + TARGET_SLOT_Y + 17) {
-            if (this.minecraft != null && !this.isSpinning) {
+            if (this.minecraft != null) {
                 this.minecraft.setScreen(new CatalogScreen(this));
                 return true;
             }

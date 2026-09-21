@@ -11,7 +11,8 @@ import java.util.function.Supplier;
 
 /**
  * Пакет от сервера к клиенту (S->C) с результатом прокрутки рулетки.
- * Содержит флаг успеха, процент шанса и угол остановки стрелки.
+ * Содержит флаг успеха, процент шанса, угол остановки стрелки и код причины
+ * отклонения (0, если спин не был отклонён).
  *
  * @author Popipok
  */
@@ -22,20 +23,27 @@ public class SpinResultPacket {
     private final boolean success;
     private final double chance;
     private final float rollAngle;
+    /** Код причины отклонения (REJECT_* из UpgraderMenu); имеет смысл только при rejected. */
+    private final int reason;
 
     /**
      * Конструктор пакета результата спина.
      *
-     * @param success   успешен ли апгрейд
-     * @param chance    рассчитанный шанс в процентах
-     * @param rollAngle угол остановки стрелки рулетки (в градусах)
+     * @param containerId идентификатор контейнера, к которому относится результат
+     * @param rejected    отклонён ли спин сервером
+     * @param success     успешен ли апгрейд
+     * @param chance      рассчитанный шанс в процентах
+     * @param rollAngle   угол остановки стрелки рулетки (в градусах)
+     * @param reason      код причины отклонения (REJECT_* или 0)
      */
-    public SpinResultPacket(int containerId, boolean rejected, boolean success, double chance, float rollAngle) {
+    public SpinResultPacket(int containerId, boolean rejected, boolean success,
+                            double chance, float rollAngle, int reason) {
         this.containerId = containerId;
         this.rejected = rejected;
         this.success = success;
         this.chance = chance;
         this.rollAngle = rollAngle;
+        this.reason = reason;
     }
 
     /**
@@ -60,6 +68,13 @@ public class SpinResultPacket {
     }
 
     /**
+     * @return код причины отклонения
+     */
+    public int getReason() {
+        return reason;
+    }
+
+    /**
      * Кодирует пакет в сетевой буфер.
      *
      * @param msg пакет
@@ -71,6 +86,7 @@ public class SpinResultPacket {
         buf.writeBoolean(msg.success);
         buf.writeDouble(msg.chance);
         buf.writeFloat(msg.rollAngle);
+        buf.writeVarInt(msg.reason);
     }
 
     /**
@@ -80,7 +96,8 @@ public class SpinResultPacket {
      * @return декодированный пакет
      */
     public static SpinResultPacket decode(FriendlyByteBuf buf) {
-        return new SpinResultPacket(buf.readVarInt(), buf.readBoolean(), buf.readBoolean(), buf.readDouble(), buf.readFloat());
+        return new SpinResultPacket(buf.readVarInt(), buf.readBoolean(), buf.readBoolean(),
+                buf.readDouble(), buf.readFloat(), buf.readVarInt());
     }
 
     /**
@@ -97,7 +114,8 @@ public class SpinResultPacket {
                     try {
                         if (Minecraft.getInstance().screen instanceof UpgraderScreen upgraderScreen
                                 && upgraderScreen.getMenu().containerId == msg.containerId) {
-                            upgraderScreen.onSpinResult(msg.rejected, msg.success, msg.chance, msg.rollAngle);
+                            upgraderScreen.onSpinResult(msg.rejected, msg.success,
+                                    msg.chance, msg.rollAngle, msg.reason);
                         }
                     } catch (Throwable t) {
                         com.mojang.logging.LogUtils.getLogger().error("SpinResultPacket client error", t);

@@ -63,9 +63,14 @@ public class ModConfig {
         public final ForgeConfigSpec.IntValue enchantWeightLegendary;
         public final ForgeConfigSpec.IntValue attributeWeight;
 
-        public final ForgeConfigSpec.IntValue recipeMaxDepth;
+        public final ForgeConfigSpec.DoubleValue statsDamageWeight;
+        public final ForgeConfigSpec.DoubleValue statsAttackSpeedWeight;
+        public final ForgeConfigSpec.DoubleValue statsDurabilityWeight;
+        public final ForgeConfigSpec.DoubleValue statsArmorWeight;
+        public final ForgeConfigSpec.DoubleValue statsToughnessWeight;
+        public final ForgeConfigSpec.DoubleValue statsMiningSpeedWeight;
+
         public final ForgeConfigSpec.LongValue recipeMaxPrice;
-        public final ForgeConfigSpec.ConfigValue<List<? extends Double>> recipeDepthMultipliers;
 
         public final ForgeConfigSpec.BooleanValue taxEnabled;
         public final ForgeConfigSpec.ConfigValue<String> taxItem;
@@ -95,15 +100,24 @@ public class ModConfig {
                     .defineInRange("attributeWeight", 50, 0, 1000000);
             builder.pop();
 
-            builder.comment("Параметры рекурсивного расчёта ценности по рецептам").push("recipes");
-            recipeMaxDepth = builder.comment("Максимальная глубина рекурсии при разборе рецепта")
-                    .defineInRange("recipeMaxDepth", 10, 1, 50);
-            recipeMaxPrice = builder.comment("Максимальная цена предмета")
+            builder.comment("Веса характеристик: ценность оружия/брони/инструментов = урон + скорость атаки + прочность + броня + скорость добычи + зачарования").push("stats");
+            statsDamageWeight = builder.comment("Ценность за 1 единицу урона")
+                    .defineInRange("statsDamageWeight", 40.0, 0.0, 1000000.0);
+            statsAttackSpeedWeight = builder.comment("Ценность за 1 единицу итоговой скорости атаки")
+                    .defineInRange("statsAttackSpeedWeight", 10.0, 0.0, 1000000.0);
+            statsDurabilityWeight = builder.comment("Ценность за 1 единицу максимальной прочности")
+                    .defineInRange("statsDurabilityWeight", 0.05, 0.0, 1000000.0);
+            statsArmorWeight = builder.comment("Ценность за 1 единицу брони")
+                    .defineInRange("statsArmorWeight", 30.0, 0.0, 1000000.0);
+            statsToughnessWeight = builder.comment("Ценность за 1 единицу твёрдости брони")
+                    .defineInRange("statsToughnessWeight", 20.0, 0.0, 1000000.0);
+            statsMiningSpeedWeight = builder.comment("Ценность за 1 единицу скорости добычи")
+                    .defineInRange("statsMiningSpeedWeight", 3.0, 0.0, 1000000.0);
+            builder.pop();
+
+            builder.comment("Ограничение максимальной ценности предмета (защита от абузов)").push("recipes");
+            recipeMaxPrice = builder.comment("Максимальная допустимая цена предмета")
                     .defineInRange("recipeMaxPrice", 10000000000000L, 1L, Long.MAX_VALUE);
-            recipeDepthMultipliers = builder.comment("Множители цены в зависимости от глубины рецепта")
-                    .defineListAllowEmpty(List.of("recipeDepthMultipliers"),
-                            () -> Arrays.asList(1.0, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0),
-                            o -> o instanceof Double);
             builder.pop();
 
             builder.comment("Параметры комиссии/налога за прокрутку").push("tax");
@@ -185,10 +199,45 @@ public class ModConfig {
     }
 
     /**
-     * @return Максимальная глубина рекурсии рецептов
+     * @return Ценность за 1 единицу урона
      */
-    public static int getRecipeMaxDepth() {
-        return COMMON.recipeMaxDepth.get();
+    public static double getStatsDamageWeight() {
+        return COMMON.statsDamageWeight.get();
+    }
+
+    /**
+     * @return Ценность за 1 единицу итоговой скорости атаки
+     */
+    public static double getStatsAttackSpeedWeight() {
+        return COMMON.statsAttackSpeedWeight.get();
+    }
+
+    /**
+     * @return Ценность за 1 единицу максимальной прочности
+     */
+    public static double getStatsDurabilityWeight() {
+        return COMMON.statsDurabilityWeight.get();
+    }
+
+    /**
+     * @return Ценность за 1 единицу брони
+     */
+    public static double getStatsArmorWeight() {
+        return COMMON.statsArmorWeight.get();
+    }
+
+    /**
+     * @return Ценность за 1 единицу твёрдости брони
+     */
+    public static double getStatsToughnessWeight() {
+        return COMMON.statsToughnessWeight.get();
+    }
+
+    /**
+     * @return Ценность за 1 единицу скорости добычи
+     */
+    public static double getStatsMiningSpeedWeight() {
+        return COMMON.statsMiningSpeedWeight.get();
     }
 
     /**
@@ -196,13 +245,6 @@ public class ModConfig {
      */
     public static long getRecipeMaxPrice() {
         return COMMON.recipeMaxPrice.get();
-    }
-
-    /**
-     * @return Список множителей глубины рецепта
-     */
-    public static List<? extends Double> getRecipeDepthMultipliers() {
-        return COMMON.recipeDepthMultipliers.get();
     }
 
     /**

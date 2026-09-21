@@ -54,6 +54,28 @@ public class UpgraderMenu extends AbstractContainerMenu {
     /** Максимальное безопасное количество целевого предмета, которое разрешает сервер. */
     public static final int MAX_TARGET_COUNT = 256;
 
+    // ---- Коды причин отклонения спина (передаются клиенту для локализации) ----
+    /** Спин отклонён без уточнения причины. */
+    public static final int REJECT_GENERIC = 0;
+    /** Меню заблокировано предыдущим незавершённым спином этого игрока. */
+    public static final int REJECT_LOCKED = 1;
+    /** Ставка или цель пусты. */
+    public static final int REJECT_EMPTY = 2;
+    /** Ставка или цель в чёрном списке. */
+    public static final int REJECT_BLACKLIST = 3;
+    /** Ценность ставки или цели равна нулю или не является числом. */
+    public static final int REJECT_VALUE = 4;
+    /** Ставка и цель — один и тот же предмет. */
+    public static final int REJECT_IDENTICAL = 5;
+    /** Эндгейм-цель запрещена в творческом режиме. */
+    public static final int REJECT_CREATIVE = 6;
+    /** Ставка слишком ценная для этой цели (лимит даунгрейда). */
+    public static final int REJECT_DOWNGRADE = 7;
+    /** Проблема с налогом: не настроен или недостаточно предметов. */
+    public static final int REJECT_TAX = 8;
+    /** Внутренняя ошибка при выполнении спина. */
+    public static final int REJECT_ERROR = 9;
+
     private final Container inputContainer = new SimpleContainer(1);
     private final Inventory playerInventory;
 
@@ -66,8 +88,12 @@ public class UpgraderMenu extends AbstractContainerMenu {
 
     // Accessed only on the logical server thread, including closed menus.
     private static final Map<UUID, UpgraderMenu> PENDING = new HashMap<>();
+    /** Предохранительный таймаут PENDING: форсирует finalizeSpin, если штатная задержка не сработала. */
+    private static final int PENDING_TIMEOUT_TICKS = 200;
     private boolean spinning;
     private int resolveTick;
+    /** Тик, в котором спин был принят; база для аварийного таймаута PENDING. */
+    private int pendingSinceTick;
     private boolean pendingSuccess;
     private double pendingChance;
     private float pendingAngle;
@@ -75,8 +101,24 @@ public class UpgraderMenu extends AbstractContainerMenu {
     private int pendingCount;
 
     public static void tickPending(net.minecraft.server.MinecraftServer server) {
+        int now = server.getTickCount();
         for (UpgraderMenu menu : java.util.List.copyOf(PENDING.values())) {
-            if (server.getTickCount() >= menu.resolveTick) menu.finalizeSpin();
+            try {
+                if (now - menu.pendingSinceTick > PENDING_TIMEOUT_TICKS) {
+                    // Аварийный таймаут: спин завис дольше 200 тиков — завершаем принудительно.
+                    LOGGER.warn("Pending spin for player {} exceeded {} ticks, forcing finalize",
+                            menu.playerInventory.player.getName().getString(), PENDING_TIMEOUT_TICKS);
+                    menu.finalizeSpin();
+                } else if (now >= menu.resolveTick) {
+                    menu.finalizeSpin();
+                }
+            } catch (Throwable t) {
+                // Ошибка одного меню не должна ломать обработку остальных PENDING-спинов.
+                LOGGER.error("Failed to finalize pending spin for player {}",
+                        menu.playerInventory.player.getName().getString(), t);
+                menu.spinning = false;
+                PENDING.values().remove(menu);
+            }
         }
     }
 
@@ -139,8 +181,20 @@ public class UpgraderMenu extends AbstractContainerMenu {
      */
     @Override
     public void broadcastChanges() {
-        super.broadcastChanges();
+        try {
+            super.broadcastChanges();
+            syncServerState();
+        } catch (Throwable t) {
+            // Ошибка синхронизации не должна крашить меню каждый тик.
+            LOGGER.error("UpgraderMenu broadcastChanges error", t);
+        }
+    }
 
+    /**
+     * Рассылка рассчитанного сервером шанса и подтверждённого состояния (цель,
+     * количество, множитель) только при их изменении. Выполняется на сервере.
+     */
+    private void syncServerState() {
         if (this.playerInventory.player instanceof ServerPlayer serverPlayer) {
             double chance = spinning ? pendingChance : calculateChance();
             if (Double.doubleToLongBits(chance) != Double.doubleToLongBits(this.lastSentChance)) {
@@ -366,21 +420,23 @@ public class UpgraderMenu extends AbstractContainerMenu {
             doSpinInternal(player);
         } catch (Throwable t) {
             LOGGER.error("doSpin error for player {}", player.getName().getString(), t);
-            rejectSpin(player);
+            rejectSpin(player, REJECT_ERROR, "exception in doSpinInternal: " + t);
         }
     }
 
     private void doSpinInternal(ServerPlayer player) {
         if (isLocked()) {
             // A duplicate request must not stop the currently running animation.
-            if (!spinning) rejectSpin(player);
+            if (!spinning) {
+                rejectSpin(player, REJECT_LOCKED, "menu is locked by another pending spin");
+            }
             return;
         }
         ItemStack input = getInputStack();
 
         // Правило 1: input.isEmpty() || target.isEmpty() → cancel
         if (input.isEmpty() || targetStack.isEmpty()) {
-            rejectSpin(player);
+            rejectSpin(player, REJECT_EMPTY, "input or target slot is empty");
             return;
         }
 
@@ -388,7 +444,7 @@ public class UpgraderMenu extends AbstractContainerMenu {
         // даже если клиент изменён или прислал поддельные пакеты.
         if (ModConfig.isBlacklisted(input) || ModConfig.isBlacklisted(targetStack)
                 || input.is(ModItems.UPGRADER.get()) || targetStack.is(ModItems.UPGRADER.get())) {
-            rejectSpin(player);
+            rejectSpin(player, REJECT_BLACKLIST, "input or target is blacklisted");
             return;
         }
 
@@ -409,7 +465,8 @@ public class UpgraderMenu extends AbstractContainerMenu {
         // Правило 2: inputValue <= 0 || targetValue <= 0 → cancel
         if (!Double.isFinite(inputValue) || !Double.isFinite(targetValue)
                 || inputValue <= 0.0 || targetValue <= 0.0) {
-            rejectSpin(player);
+            rejectSpin(player, REJECT_VALUE, String.format(Locale.ROOT,
+                    "non-positive or non-finite value: input=%.3f target=%.3f", inputValue, targetValue));
             return;
         }
 
@@ -418,19 +475,21 @@ public class UpgraderMenu extends AbstractContainerMenu {
 
         // Правило 3: одинаковый предмет → cancel
         if (ItemStack.isSameItemSameTags(input, targetWithCount)) {
-            rejectSpin(player);
+            rejectSpin(player, REJECT_IDENTICAL, "input and target items are identical");
             return;
         }
 
         // Правило 4: player.isCreative() && targetValue >= 1_000_000 → cancel
         if (player.isCreative() && targetValue >= 1000000.0 && !ModConfig.isAllowCreativeEndgame()) {
-            rejectSpin(player);
+            rejectSpin(player, REJECT_CREATIVE, "endgame target is restricted for creative players");
             return;
         }
 
         // Правило 5: inputValue > targetValue * maxDowngradeRatio → cancel
         if (inputValue > targetValue * ModConfig.getMaxDowngradeRatio()) {
-            rejectSpin(player);
+            rejectSpin(player, REJECT_DOWNGRADE, String.format(Locale.ROOT,
+                    "input value %.3f exceeds downgrade limit for target value %.3f",
+                    inputValue, targetValue));
             return;
         }
 
@@ -446,13 +505,15 @@ public class UpgraderMenu extends AbstractContainerMenu {
             ResourceLocation taxId = ResourceLocation.tryParse(taxItemId);
             Item taxItem = taxId == null ? null : ForgeRegistries.ITEMS.getValue(taxId);
             if (taxItem == null || taxItem == net.minecraft.world.item.Items.AIR || taxCount < 1) {
-                rejectSpin(player);
+                rejectSpin(player, REJECT_TAX, "tax is enabled but the tax item is not configured correctly");
                 return;
             }
             if (taxItem != null) {
                 int availableTax = player.getInventory().countItem(taxItem);
                 if (availableTax < taxCount) {
-                    rejectSpin(player);
+                    rejectSpin(player, REJECT_TAX, String.format(Locale.ROOT,
+                            "not enough tax items: required %d of '%s', has %d",
+                            taxCount, taxItemId, availableTax));
                     return; // Недостаточно предметов для оплаты налога
                 }
                 player.getInventory().clearOrCountMatchingItems(s -> s.is(taxItem), taxCount, player.inventoryMenu.getCraftSlots());
@@ -483,15 +544,32 @@ public class UpgraderMenu extends AbstractContainerMenu {
         this.pendingTarget = this.targetStack.copy();
         this.pendingCount = rewardTotal;
         this.resolveTick = player.getServer().getTickCount() + 40;
+        this.pendingSinceTick = player.getServer().getTickCount();
         this.spinning = true;
         PENDING.put(player.getUUID(), this);
+        LOGGER.debug("Spin accepted for player {}: input '{}' x{}, target '{}' x{}, multiplier x{}, chance {}%",
+                player.getName().getString(),
+                ForgeRegistries.ITEMS.getKey(input.getItem()), input.getCount(),
+                ForgeRegistries.ITEMS.getKey(targetWithCount.getItem()), count,
+                this.multiplier, String.format(Locale.ROOT, "%.3f", chance));
         this.inputContainer.setItem(0, ItemStack.EMPTY);
         this.broadcastChanges();
     }
 
-    private void rejectSpin(ServerPlayer player) {
+    /**
+     * Отклоняет спин с кодом причины: причина попадает в latest.log (DEBUG),
+     * а клиент получает reject-пакет с кодом и показывает игроку
+     * локализованное «✗ Отклонено: причина».
+     *
+     * @param player       игрок, чей спин отклонён
+     * @param reasonCode   код причины (REJECT_*) для клиента
+     * @param debugDetails детали причины для лога
+     */
+    private void rejectSpin(ServerPlayer player, int reasonCode, String debugDetails) {
+        LOGGER.debug("Spin rejected for player {} (code {}): {}",
+                player.getName().getString(), reasonCode, debugDetails);
         NetworkHandler.sendToPlayer(player,
-                new SpinResultPacket(containerId, true, false, 0.0, 0.0F));
+                new SpinResultPacket(containerId, true, false, 0.0, 0.0F, reasonCode));
     }
 
     private void finalizeSpin() {
@@ -502,6 +580,11 @@ public class UpgraderMenu extends AbstractContainerMenu {
         PENDING.remove(player.getUUID(), this);
         boolean success = pendingSuccess;
         if (success) {
+            LOGGER.info("Spin succeeded for player {}: reward '{}' x{} (chance {}%)",
+                    player.getName().getString(),
+                    ForgeRegistries.ITEMS.getKey(this.pendingTarget.getItem()),
+                    this.pendingCount,
+                    String.format(Locale.ROOT, "%.3f", this.pendingChance));
             // Награда разбивается на несколько ItemStack, если превышает размер стака.
             int remaining = pendingCount;
             int maxStackSize = Math.max(1, this.pendingTarget.getMaxStackSize());
@@ -514,21 +597,32 @@ public class UpgraderMenu extends AbstractContainerMenu {
                 }
                 remaining -= size;
             }
+        } else {
+            LOGGER.debug("Spin failed for player {} (chance {}%): stake burned",
+                    player.getName().getString(),
+                    String.format(Locale.ROOT, "%.3f", this.pendingChance));
         }
 
-        player.playNotifySound(
-                success ? ModSounds.SPIN_SUCCESS.get() : ModSounds.SPIN_FAILURE.get(),
-                SoundSource.PLAYERS,
-                0.85F,
-                success ? 1.0F : 0.8F);
+        try {
+            player.playNotifySound(
+                    success ? ModSounds.SPIN_SUCCESS.get() : ModSounds.SPIN_FAILURE.get(),
+                    SoundSource.PLAYERS,
+                    0.85F,
+                    success ? 1.0F : 0.8F);
+        } catch (Throwable t) {
+            // Проблема со звуком не должна отменять выдачу результата спина.
+            LOGGER.error("Failed to play spin result sound for player {}",
+                    player.getName().getString(), t);
+        }
 
         pendingTarget = ItemStack.EMPTY;
         pendingCount = 0;
         if (player.containerMenu == this) this.broadcastChanges();
         player.getInventory().setChanged();
 
-        // Отправка клиенту пакета с результатом
-        NetworkHandler.sendToPlayer(player, new SpinResultPacket(containerId, false, success, pendingChance, pendingAngle));
+        // Отправка клиенту пакета с результатом (reason = 0 — спин не отклонён)
+        NetworkHandler.sendToPlayer(player,
+                new SpinResultPacket(containerId, false, success, pendingChance, pendingAngle, REJECT_GENERIC));
     }
 
     private void logSuspiciousAction(ServerPlayer player, ItemStack input, double inputVal, ItemStack target, double targetVal) {
