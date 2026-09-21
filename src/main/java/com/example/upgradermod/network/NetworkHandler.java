@@ -78,6 +78,27 @@ public class NetworkHandler {
                 .decoder(SetMultiplierPacket::decode)
                 .consumerMainThread(SetMultiplierPacket::handle)
                 .add();
+
+        // C->S: Запрос количества цели (сервер ограничивает безопасным значением)
+        CHANNEL.messageBuilder(SetTargetCountPacket.class, nextId(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(SetTargetCountPacket::encode)
+                .decoder(SetTargetCountPacket::decode)
+                .consumerMainThread(SetTargetCountPacket::handle)
+                .add();
+
+        // C->S: Пресет шанса 30%, 50% или 80% (сервер подбирает количество цели)
+        CHANNEL.messageBuilder(ChancePresetPacket.class, nextId(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(ChancePresetPacket::encode)
+                .decoder(ChancePresetPacket::decode)
+                .consumerMainThread(ChancePresetPacket::handle)
+                .add();
+
+        // S->C: Подтверждённое сервером состояние (цель, количество, множитель)
+        CHANNEL.messageBuilder(SyncStatePacket.class, nextId(), NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(SyncStatePacket::encode)
+                .decoder(SyncStatePacket::decode)
+                .consumerMainThread(SyncStatePacket::handle)
+                .add();
     }
 
     /**

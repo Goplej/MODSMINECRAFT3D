@@ -3,6 +3,7 @@ package com.example.upgradermod.client;
 import com.example.upgradermod.logic.ChanceCalculator;
 import com.example.upgradermod.logic.ItemRegistryCache;
 import com.example.upgradermod.logic.ValueCalculator;
+import com.example.upgradermod.menu.UpgraderMenu;
 import com.example.upgradermod.network.NetworkHandler;
 import com.example.upgradermod.network.SetTargetPacket;
 import net.minecraft.client.gui.GuiGraphics;
@@ -17,11 +18,12 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Тёмный каталог предметов для выбора цели апгрейда.
- * Содержит поиск, сетку 8x6 и подробный tooltip с ценностью и шансом.
+ * Содержит поиск, сетку 8x6 с вертикальной прокруткой (кнопки вверх/вниз
+ * и колёсико мыши) и подробный tooltip с ценностью и шансом.
+ * Blacklist фильтруется до попадания предметов в список.
  *
  * @author Popipok
  */
@@ -30,26 +32,33 @@ public class CatalogScreen extends Screen {
 
     private static final int GUI_WIDTH = 256;
     private static final int GUI_HEIGHT = 220;
-    private static final int ITEMS_PER_PAGE = 48;
     private static final int COLS = 8;
     private static final int ROWS = 6;
+    private static final int GRID_X = 20;
+    private static final int GRID_Y = 42;
+    private static final int CELL_W = 25;
+    private static final int CELL_H = 23;
 
     private static final int BACKGROUND_COLOR = 0xFF1A1A2E;
     private static final int PANEL_COLOR = 0xFF16213E;
     private static final int FRAME_COLOR = 0xFF533483;
     private static final int HOVER_COLOR = 0xFF0F3460;
     private static final int ACCENT_COLOR = 0xFFE94560;
+    private static final int ACCENT_HOVER_COLOR = 0xFFFF6B8A;
     private static final int TEXT_COLOR = 0xFFE8E8E8;
+    private static final int MUTED_COLOR = 0xFF9A9AB0;
+    private static final int DISABLED_COLOR = 0xFF3A3A4A;
     private static final int GOLD_COLOR = 0xFFFFD700;
 
     private final UpgraderScreen parent;
     private EditBox searchBox;
-    private Button btnPrev;
-    private Button btnNext;
+    private Button btnUp;
+    private Button btnDown;
 
     private int leftPos;
     private int topPos;
-    private int currentPage;
+    /** Индекс верхней видимой строки списка. */
+    private int scrollRow;
     private List<ItemStack> filteredItems = new ArrayList<>();
 
     public CatalogScreen(UpgraderScreen parent) {
@@ -63,56 +72,66 @@ public class CatalogScreen extends Screen {
         this.leftPos = (this.width - GUI_WIDTH) / 2;
         this.topPos = (this.height - GUI_HEIGHT) / 2;
 
-        this.searchBox = new EditBox(this.font, this.leftPos + 24, this.topPos + 18,
-                208, 16, Component.translatable("gui.upgradermod.search"));
+        this.searchBox = new EditBox(this.font, this.leftPos + 24, this.topPos + 20,
+                190, 16, Component.translatable("gui.upgradermod.search"));
         this.searchBox.setResponder(this::onSearchChanged);
         this.searchBox.setBordered(false);
         this.searchBox.setTextColor(TEXT_COLOR);
         this.addRenderableWidget(this.searchBox);
 
-        this.btnPrev = this.addRenderableWidget(Button.builder(
-                        Component.translatable("gui.upgradermod.prev"), button -> changePage(-1))
-                .bounds(this.leftPos + 24, this.topPos + 185, 60, 20)
-                .build());
-        this.btnNext = this.addRenderableWidget(Button.builder(
-                        Component.translatable("gui.upgradermod.next"), button -> changePage(1))
-                .bounds(this.leftPos + 172, this.topPos + 185, 60, 20)
-                .build());
+        // Вертикальная навигация: вверх/вниз вместо горизонтальных Prev/Next.
+        this.btnUp = this.addRenderableWidget(Button.builder(
+                        Component.literal("\u25B2"), button -> scrollBy(-ROWS))
+                .bounds(this.leftPos + 228, this.topPos + GRID_Y, 18, 20).build());
+        this.btnDown = this.addRenderableWidget(Button.builder(
+                        Component.literal("\u25BC"), button -> scrollBy(ROWS))
+                .bounds(this.leftPos + 228, this.topPos + GRID_Y + ROWS * CELL_H - 20, 18, 20).build());
 
-        updateSearch("");
+        updateSearch(this.searchBox != null ? this.searchBox.getValue() : "");
     }
 
     private void onSearchChanged(String query) {
-        this.currentPage = 0;
+        this.scrollRow = 0;
         updateSearch(query);
     }
 
     private void updateSearch(String query) {
         this.filteredItems = ItemRegistryCache.search(query);
+        this.scrollRow = Math.min(this.scrollRow, getMaxScrollRow());
         updateButtonStates();
     }
 
-    private void changePage(int delta) {
-        int maxPages = getMaxPages();
-        int newPage = this.currentPage + delta;
-        if (newPage >= 0 && newPage < maxPages) {
-            this.currentPage = newPage;
-            updateButtonStates();
-        }
+    private int getTotalRows() {
+        return Math.max(1, (int) Math.ceil((double) this.filteredItems.size() / COLS));
     }
 
-    private int getMaxPages() {
-        return Math.max(1, (int) Math.ceil((double) this.filteredItems.size() / ITEMS_PER_PAGE));
+    private int getMaxScrollRow() {
+        return Math.max(0, getTotalRows() - ROWS);
+    }
+
+    private void scrollBy(int deltaRows) {
+        this.scrollRow = Math.max(0, Math.min(getMaxScrollRow(), this.scrollRow + deltaRows));
+        updateButtonStates();
     }
 
     private void updateButtonStates() {
-        int maxPages = getMaxPages();
-        if (this.btnPrev != null) {
-            this.btnPrev.active = this.currentPage > 0;
+        if (this.btnUp != null) {
+            this.btnUp.active = this.scrollRow > 0;
         }
-        if (this.btnNext != null) {
-            this.btnNext.active = this.currentPage < maxPages - 1;
+        if (this.btnDown != null) {
+            this.btnDown.active = this.scrollRow < getMaxScrollRow();
         }
+    }
+
+    /** Прокрутка колёсиком мыши (сигнатура Screen для Forge 1.20.1). */
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
+        if (delta > 0.0D) {
+            scrollBy(-1);
+        } else if (delta < 0.0D) {
+            scrollBy(1);
+        }
+        return true;
     }
 
     @Override
@@ -123,23 +142,20 @@ public class CatalogScreen extends Screen {
         int y = this.topPos;
         drawPanel(guiGraphics, x, y);
 
+        guiGraphics.drawCenteredString(this.font, this.title, x + GUI_WIDTH / 2, y + 6, GOLD_COLOR);
+
         // Поле поиска получает ту же тему, что и панель каталога.
-        guiGraphics.fill(x + 22, y + 16, x + 234, y + 36, FRAME_COLOR);
-        guiGraphics.fill(x + 24, y + 18, x + 232, y + 34, PANEL_COLOR);
+        guiGraphics.fill(x + 22, y + 16, x + 216, y + 38, FRAME_COLOR);
+        guiGraphics.fill(x + 23, y + 17, x + 215, y + 37, PANEL_COLOR);
 
-        Component title = Component.translatable("gui.upgradermod.catalog");
-        guiGraphics.drawCenteredString(this.font, title, x + GUI_WIDTH / 2, y + 6, GOLD_COLOR);
-
-        int startIndex = this.currentPage * ITEMS_PER_PAGE;
-        int gridStartX = x + 24;
-        int gridStartY = y + 42;
+        // Сетка предметов с вертикальной прокруткой.
         for (int row = 0; row < ROWS; row++) {
             for (int col = 0; col < COLS; col++) {
-                int itemIndex = startIndex + row * COLS + col;
-                int slotX = gridStartX + col * 26;
-                int slotY = gridStartY + row * 23;
-                boolean hovered = mouseX >= slotX && mouseX <= slotX + 18
-                        && mouseY >= slotY && mouseY <= slotY + 18;
+                int itemIndex = (this.scrollRow + row) * COLS + col;
+                int slotX = x + GRID_X + col * CELL_W;
+                int slotY = y + GRID_Y + row * CELL_H;
+                boolean hovered = mouseX >= slotX && mouseX < slotX + 18
+                        && mouseY >= slotY && mouseY < slotY + 18;
 
                 int slotColor = hovered ? HOVER_COLOR : PANEL_COLOR;
                 guiGraphics.fill(slotX - 1, slotY - 1, slotX + 19, slotY + 19, FRAME_COLOR);
@@ -153,33 +169,56 @@ public class CatalogScreen extends Screen {
             }
         }
 
-        Component pageText = Component.translatable("gui.upgradermod.page",
-                this.currentPage + 1, getMaxPages());
-        guiGraphics.drawCenteredString(this.font, pageText,
-                x + GUI_WIDTH / 2, y + 191, TEXT_COLOR);
+        // Полоса прокрутки между кнопками вверх/вниз.
+        int trackTop = y + GRID_Y + 22;
+        int trackBottom = y + GRID_Y + ROWS * CELL_H - 22;
+        guiGraphics.fill(x + 234, trackTop, x + 240, trackBottom, BACKGROUND_COLOR);
+        int maxScroll = getMaxScrollRow();
+        int thumbHeight = Math.max(8, (trackBottom - trackTop) * ROWS / Math.max(ROWS, getTotalRows()));
+        int thumbOffset = maxScroll == 0 ? 0
+                : (trackBottom - trackTop - thumbHeight) * this.scrollRow / maxScroll;
+        guiGraphics.fill(x + 234, trackTop + thumbOffset, x + 240,
+                trackTop + thumbOffset + thumbHeight, ACCENT_COLOR);
+
+        // Счётчик предметов и позиция списка.
+        guiGraphics.drawCenteredString(this.font,
+                Component.translatable("gui.upgradermod.items_count", this.filteredItems.size()),
+                x + 120, y + 186, TEXT_COLOR);
+        guiGraphics.drawCenteredString(this.font,
+                Component.translatable("gui.upgradermod.rows_position",
+                        this.scrollRow + 1, Math.max(this.scrollRow + 1, getTotalRows())),
+                x + 120, y + 198, MUTED_COLOR);
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);
-        drawCatalogButton(guiGraphics, this.btnPrev,
-                Component.translatable("gui.upgradermod.prev"), mouseX, mouseY);
-        drawCatalogButton(guiGraphics, this.btnNext,
-                Component.translatable("gui.upgradermod.next"), mouseX, mouseY);
+        drawCatalogButton(guiGraphics, this.btnUp, Component.literal("\u25B2"), mouseX, mouseY);
+        drawCatalogButton(guiGraphics, this.btnDown, Component.literal("\u25BC"), mouseX, mouseY);
 
         ItemStack hovered = getHoveredItem(mouseX, mouseY);
         if (!hovered.isEmpty()) {
             List<Component> tooltip = new ArrayList<>();
             tooltip.add(hovered.getHoverName());
 
-            long value = Math.round(ValueCalculator.getItemStackValue(hovered));
-            tooltip.add(Component.literal(Component.translatable("gui.upgradermod.tooltip_value",
-                    formatWithSpaces(value)).getString()).withStyle(ChatFormatting.YELLOW));
+            double unitValue = ValueCalculator.getItemStackValue(hovered);
+            tooltip.add(Component.translatable("gui.upgradermod.tooltip_value",
+                            ChanceCalculator.formatNumber(unitValue))
+                    .withStyle(ChatFormatting.YELLOW));
 
-            ItemStack input = this.parent.getMenu().getInputStack();
-            if (!input.isEmpty() && value > 0L) {
+            UpgraderMenu menu = this.parent.getMenu();
+            ItemStack input = menu.getInputStack();
+            if (!input.isEmpty() && unitValue > 0.0D) {
+                // Отображаемый шанс детерминирован и учитывает подтверждённые сервером
+                // количество цели и множитель; результат спина клиент не вычисляет.
                 double inputValue = ValueCalculator.getItemStackValue(input);
                 double chance = ChanceCalculator.calculateChance(
-                        inputValue, value, this.parent.getMenu().getMultiplier());
-                tooltip.add(Component.literal(Component.translatable("gui.upgradermod.tooltip_chance",
-                        ChanceCalculator.formatChance(chance)).getString()).withStyle(ChatFormatting.GREEN));
+                        inputValue, unitValue * menu.getTargetCount(), menu.getMultiplier());
+                tooltip.add(Component.translatable("gui.upgradermod.tooltip_chance",
+                                ChanceCalculator.formatChance(chance))
+                        .withStyle(ChatFormatting.GREEN));
+                if (menu.getTargetCount() > 1) {
+                    tooltip.add(Component.translatable("gui.upgradermod.tooltip_chance_count",
+                                    menu.getTargetCount())
+                            .withStyle(ChatFormatting.DARK_GRAY));
+                }
             }
 
             guiGraphics.renderComponentTooltip(this.font, tooltip, mouseX, mouseY);
@@ -203,30 +242,34 @@ public class CatalogScreen extends Screen {
 
         boolean hovered = mouseX >= button.getX() && mouseX < button.getX() + button.getWidth()
                 && mouseY >= button.getY() && mouseY < button.getY() + button.getHeight();
-        int background = !button.active ? 0xFF555555 : (hovered ? 0xFFFF6B8A : ACCENT_COLOR);
-        int textColor = button.active ? 0xFFFFFFFF : 0xFF888888;
+        int background;
+        int textColor;
+        if (!button.active) {
+            background = DISABLED_COLOR;
+            textColor = MUTED_COLOR;
+        } else {
+            background = hovered ? ACCENT_HOVER_COLOR : ACCENT_COLOR;
+            textColor = 0xFFFFFFFF;
+        }
 
         guiGraphics.fill(button.getX(), button.getY(),
                 button.getX() + button.getWidth(), button.getY() + button.getHeight(), FRAME_COLOR);
-        guiGraphics.fill(button.getX() + 2, button.getY() + 2,
-                button.getX() + button.getWidth() - 2,
-                button.getY() + button.getHeight() - 2, background);
+        guiGraphics.fill(button.getX() + 1, button.getY() + 1,
+                button.getX() + button.getWidth() - 1,
+                button.getY() + button.getHeight() - 1, background);
         guiGraphics.drawCenteredString(this.font, label,
-                button.getX() + button.getWidth() / 2, button.getY() + 6, textColor);
+                button.getX() + button.getWidth() / 2,
+                button.getY() + (button.getHeight() - 8) / 2, textColor);
     }
 
     private ItemStack getHoveredItem(double mouseX, double mouseY) {
-        int gridStartX = this.leftPos + 24;
-        int gridStartY = this.topPos + 42;
-        int startIndex = this.currentPage * ITEMS_PER_PAGE;
-
         for (int row = 0; row < ROWS; row++) {
             for (int col = 0; col < COLS; col++) {
-                int slotX = gridStartX + col * 26;
-                int slotY = gridStartY + row * 23;
-                if (mouseX >= slotX && mouseX <= slotX + 18
-                        && mouseY >= slotY && mouseY <= slotY + 18) {
-                    int itemIndex = startIndex + row * COLS + col;
+                int slotX = this.leftPos + GRID_X + col * CELL_W;
+                int slotY = this.topPos + GRID_Y + row * CELL_H;
+                if (mouseX >= slotX && mouseX < slotX + 18
+                        && mouseY >= slotY && mouseY < slotY + 18) {
+                    int itemIndex = (this.scrollRow + row) * COLS + col;
                     if (itemIndex < this.filteredItems.size()) {
                         return this.filteredItems.get(itemIndex);
                     }
@@ -236,32 +279,20 @@ public class CatalogScreen extends Screen {
         return ItemStack.EMPTY;
     }
 
-    /** Форматирует большие значения группами по три цифры через пробел. */
-    private static String formatWithSpaces(long number) {
-        String raw = String.format(Locale.ROOT, "%d", Math.max(0L, number));
-        StringBuilder result = new StringBuilder(raw);
-        for (int index = result.length() - 3; index > 0; index -= 3) {
-            result.insert(index, ' ');
-        }
-        return result.toString();
-    }
-
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        int gridStartX = this.leftPos + 24;
-        int gridStartY = this.topPos + 42;
-        int startIndex = this.currentPage * ITEMS_PER_PAGE;
-
         for (int row = 0; row < ROWS; row++) {
             for (int col = 0; col < COLS; col++) {
-                int slotX = gridStartX + col * 26;
-                int slotY = gridStartY + row * 23;
-                if (mouseX >= slotX && mouseX <= slotX + 18
-                        && mouseY >= slotY && mouseY <= slotY + 18) {
-                    int itemIndex = startIndex + row * COLS + col;
+                int slotX = this.leftPos + GRID_X + col * CELL_W;
+                int slotY = this.topPos + GRID_Y + row * CELL_H;
+                if (mouseX >= slotX && mouseX < slotX + 18
+                        && mouseY >= slotY && mouseY < slotY + 18) {
+                    int itemIndex = (this.scrollRow + row) * COLS + col;
                     if (itemIndex < this.filteredItems.size()) {
                         ItemStack chosen = this.filteredItems.get(itemIndex).copy();
                         chosen.setCount(1);
+                        // Цель отправляется на сервер; сервер проверяет blacklist
+                        // и подтверждает состояние через SyncStatePacket.
                         NetworkHandler.sendToServer(new SetTargetPacket(chosen));
                         this.parent.getMenu().setTargetStack(chosen);
                         if (this.minecraft != null) {

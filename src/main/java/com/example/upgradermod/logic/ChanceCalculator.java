@@ -17,11 +17,11 @@ public class ChanceCalculator {
      * Вычисляет шанс успешного апгрейда в процентах (от minChance до maxChance).
      * ratio = inputValue / (targetValue * multiplier)
      * chance = ratio * 100
-     * clamp 1e-21...90.0
+     * clamp minChance...maxChance
      *
-     * @param inputValue  ценность ставки
-     * @param targetValue ценность цели
-     * @param multiplier  множитель (1, 2, 4, 8)
+     * @param inputValue  ценность ставки (всего стака)
+     * @param targetValue суммарная ценность цели (стоимость единицы * количество цели)
+     * @param multiplier  множитель награды (1, 2, 4, 8 или 10)
      * @return шанс в процентах
      */
     public static double calculateChance(double inputValue, double targetValue, int multiplier) {
@@ -36,6 +36,38 @@ public class ChanceCalculator {
         double maxChance = ModConfig.getMaxChance();
 
         return Math.max(minChance, Math.min(maxChance, chance));
+    }
+
+    /**
+     * Серверный подбор количества цели, при котором фактический шанс максимально
+     * приближается к желаемому проценту (пресеты 30%, 50%, 80%).
+     * Учитывает clamp minChance/maxChance: если желаемый процент недостижим,
+     * возвращается количество с ближайшим реальным шансом.
+     *
+     * @param inputValue       ценность ставки (всего стака)
+     * @param unitTargetValue  ценность одной единицы целевого предмета
+     * @param multiplier       множитель награды (1, 2, 4, 8 или 10)
+     * @param desiredPercent   желаемый шанс в процентах
+     * @param maxCount         максимально допустимое количество цели
+     * @return подобранное количество цели (1..maxCount) или 0, если подбор невозможен
+     */
+    public static int solveCountForChance(double inputValue, double unitTargetValue,
+                                          int multiplier, double desiredPercent, int maxCount) {
+        if (inputValue <= 0.0 || unitTargetValue <= 0.0 || multiplier <= 0 || maxCount <= 0) {
+            return 0;
+        }
+
+        int bestCount = 0;
+        double bestDelta = Double.MAX_VALUE;
+        for (int count = 1; count <= maxCount; count++) {
+            double chance = calculateChance(inputValue, unitTargetValue * (double) count, multiplier);
+            double delta = Math.abs(chance - desiredPercent);
+            if (delta < bestDelta) {
+                bestDelta = delta;
+                bestCount = count;
+            }
+        }
+        return bestCount;
     }
 
     /**
