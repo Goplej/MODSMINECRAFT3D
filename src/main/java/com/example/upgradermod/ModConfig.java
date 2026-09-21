@@ -63,6 +63,13 @@ public class ModConfig {
         public final ForgeConfigSpec.IntValue enchantWeightLegendary;
         public final ForgeConfigSpec.IntValue attributeWeight;
 
+        public final ForgeConfigSpec.DoubleValue statsDamageWeight;
+        public final ForgeConfigSpec.DoubleValue statsAttackSpeedWeight;
+        public final ForgeConfigSpec.DoubleValue statsDurabilityWeight;
+        public final ForgeConfigSpec.DoubleValue statsArmorWeight;
+        public final ForgeConfigSpec.DoubleValue statsToughnessWeight;
+        public final ForgeConfigSpec.DoubleValue statsMiningSpeedWeight;
+
         public final ForgeConfigSpec.LongValue recipeMaxPrice;
 
         public final ForgeConfigSpec.BooleanValue taxEnabled;
@@ -91,6 +98,21 @@ public class ModConfig {
                     .defineInRange("enchantWeightLegendary", 200, 0, 1000000);
             attributeWeight = builder.comment("Вес модификаторов атрибутов")
                     .defineInRange("attributeWeight", 50, 0, 1000000);
+            builder.pop();
+
+            builder.comment("Веса характеристик: ценность оружия/брони/инструментов = урон + скорость атаки + прочность + броня + скорость добычи + зачарования").push("stats");
+            statsDamageWeight = builder.comment("Ценность за 1 единицу урона")
+                    .defineInRange("statsDamageWeight", 40.0, 0.0, 1000000.0);
+            statsAttackSpeedWeight = builder.comment("Ценность за 1 единицу итоговой скорости атаки")
+                    .defineInRange("statsAttackSpeedWeight", 10.0, 0.0, 1000000.0);
+            statsDurabilityWeight = builder.comment("Ценность за 1 единицу максимальной прочности")
+                    .defineInRange("statsDurabilityWeight", 0.05, 0.0, 1000000.0);
+            statsArmorWeight = builder.comment("Ценность за 1 единицу брони")
+                    .defineInRange("statsArmorWeight", 30.0, 0.0, 1000000.0);
+            statsToughnessWeight = builder.comment("Ценность за 1 единицу твёрдости брони")
+                    .defineInRange("statsToughnessWeight", 20.0, 0.0, 1000000.0);
+            statsMiningSpeedWeight = builder.comment("Ценность за 1 единицу скорости добычи")
+                    .defineInRange("statsMiningSpeedWeight", 3.0, 0.0, 1000000.0);
             builder.pop();
 
             builder.comment("Ограничение максимальной ценности предмета (защита от абузов)").push("recipes");
@@ -174,6 +196,48 @@ public class ModConfig {
      */
     public static int getAttributeWeight() {
         return COMMON.attributeWeight.get();
+    }
+
+    /**
+     * @return Ценность за 1 единицу урона
+     */
+    public static double getStatsDamageWeight() {
+        return COMMON.statsDamageWeight.get();
+    }
+
+    /**
+     * @return Ценность за 1 единицу итоговой скорости атаки
+     */
+    public static double getStatsAttackSpeedWeight() {
+        return COMMON.statsAttackSpeedWeight.get();
+    }
+
+    /**
+     * @return Ценность за 1 единицу максимальной прочности
+     */
+    public static double getStatsDurabilityWeight() {
+        return COMMON.statsDurabilityWeight.get();
+    }
+
+    /**
+     * @return Ценность за 1 единицу брони
+     */
+    public static double getStatsArmorWeight() {
+        return COMMON.statsArmorWeight.get();
+    }
+
+    /**
+     * @return Ценность за 1 единицу твёрдости брони
+     */
+    public static double getStatsToughnessWeight() {
+        return COMMON.statsToughnessWeight.get();
+    }
+
+    /**
+     * @return Ценность за 1 единицу скорости добычи
+     */
+    public static double getStatsMiningSpeedWeight() {
+        return COMMON.statsMiningSpeedWeight.get();
     }
 
     /**

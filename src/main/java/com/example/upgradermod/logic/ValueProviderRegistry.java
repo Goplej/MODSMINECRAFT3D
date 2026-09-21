@@ -31,6 +31,7 @@ public class ValueProviderRegistry {
 
         register(new OverrideValueProvider());     // 1000
         register(new ManualJsonValueProvider());  // 800
+        register(new StatsValueProvider());       // 600: урон + прочность + скорость + броня
         register(new TagValueProvider());         // 500
         register(new AnalogyValueProvider());     // 300
         register(new HeuristicValueProvider());   // 100
